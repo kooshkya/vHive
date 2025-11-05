@@ -56,6 +56,7 @@ type SnapshotManager struct {
 	snapshots  map[string]*Snapshot
 	baseFolder string
 	chunking   bool
+	chunkRegistry map[string]bool
 	lazy       bool
 	wsPulling  bool
 
@@ -68,6 +69,7 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 		snapshots:  make(map[string]*Snapshot),
 		baseFolder: baseFolder,
 		chunking:   chunking,
+		chunkRegistry: make(map[string]bool),
 		storage:    store,
 		wsPulling:  wsPulling,
 		lazy:       lazy,
@@ -405,12 +407,16 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
 
-	if _, err := os.Stat(chunkFilePath); err == nil { // Chunk file exists locally, use it
-		return nil
+	if mgr.chunkRegistry[hash] {
+		return nil // already downloaded
 	}
 
-	// Chunk file does not exist locally, download it
-	return mgr.downloadFile(chunkPrefix, chunkFilePath, hash)
+	if err := mgr.downloadFile(chunkPrefix, chunkFilePath, hash); err != nil {
+		return err
+	}
+
+	mgr.chunkRegistry[hash] = true
+	return nil
 }
 
 func (mgr *SnapshotManager) GetChunkFilePath(hash string) string {
