@@ -239,7 +239,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 		chunkHash := hex.EncodeToString(hash[:])
 		chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, chunkHash)
 
-		if _, err := os.Stat(chunkFilePath); err == nil {
+		if mgr.chunkRegistry[chunkHash] {
 			// Chunk file already exists, skip uploading
 			chunkIndex++
 			continue
@@ -254,6 +254,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 			chunkFile.Close()
 			return errors.Wrapf(err, "writing to chunk file %s", chunkFilePath)
 		}
+		mgr.chunkRegistry[chunkHash] = true
 		mgr.uploadFile(chunkPrefix, chunkFilePath)
 
 		chunkFile.Close()
