@@ -400,21 +400,15 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
             for j := range jobs {
                 hash := j.hash
                 idx := j.idx
-                chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
-
-                if err := mgr.DownloadChunk(hash); err != nil {
+				
+				chunk_bytes, err := mgr.DownloadAndReturnChunk(hash)
+                if err != nil {
                     log.Printf("Error downloading chunk %d: %v", idx, err)
                     continue
                 }
 
-                data, err := os.ReadFile(chunkFilePath)
-                if err != nil {
-                    log.Printf("Error reading chunk %d: %v", idx, err)
-                    continue
-                }
-
                 offset := int64(idx * chunkSize)
-                if _, err := outFile.WriteAt(data, offset); err != nil {
+                if _, err := outFile.WriteAt(chunk_bytes, offset); err != nil {
                     log.Printf("Error writing chunk %d: %v", idx, err)
                 }
             }
@@ -429,6 +423,46 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
     wg.Wait()
 
 	return nil
+}
+
+func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) {
+	chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
+
+	// Return from in-memory registry if already downloaded
+	if mgr.chunkRegistry[hash] {
+		data, err := os.ReadFile(chunkFilePath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "reading cached chunk %s", hash)
+		}
+		return data, nil
+	}
+
+	// Download and store chunk
+	objectKey := mgr.getObjectKey(chunkPrefix, hash)
+	obj, err := mgr.storage.DownloadObject(objectKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "downloading chunk %s", hash)
+	}
+	defer obj.Close()
+
+	outFile, err := os.Create(chunkFilePath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "creating chunk file %s", chunkFilePath)
+	}
+	defer outFile.Close()
+
+	data, err := io.ReadAll(obj) // read object into memory
+	if err != nil {
+		return nil, errors.Wrapf(err, "reading chunk %s", hash)
+	}
+
+	if _, err := outFile.Write(data); err != nil {
+		return nil, errors.Wrapf(err, "writing chunk %s", hash)
+	}
+	// Mark as downloaded
+	mgr.chunkRegistry[hash] = true
+
+	return data, nil
 }
 
 func (mgr *SnapshotManager) DownloadChunk(hash string) error {
