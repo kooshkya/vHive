@@ -369,12 +369,18 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 	}
 	defer recipeFile.Close()
 
-	recipe, err := io.ReadAll(recipeFile)
-	if err != nil {
-		return errors.Wrapf(err, "reading recipe file for chunked download")
-	}
+	// Worker pool
+	type job struct {
+        idx  int
+        hash string
+    }
 
-	// Extract hashes
+	recipe, err := os.ReadFile(recipeFilePath)
+    if err != nil {
+        return errors.Wrapf(err, "reading recipe file")
+    }
+
+    // Extract chunk hashes
     var hashes []string
     for i := 0; i < len(recipe); i += md5.Size {
         if i+md5.Size > len(recipe) {
@@ -383,50 +389,44 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
         hashes = append(hashes, hex.EncodeToString(recipe[i:i+md5.Size]))
     }
 
-    type chunkResult struct {
-        index int
-        data  []byte
-        err   error
-    }
-
+	var wg sync.WaitGroup
+    jobs := make(chan job, len(hashes))
     numWorkers := 8 // TODO: tune based on CPU/network
-    jobs := make(chan int, len(hashes))
-    results := make(chan chunkResult, len(hashes))
 
     for w := 0; w < numWorkers; w++ {
+        wg.Add(1)
         go func() {
-            for idx := range jobs {
-                hash := hashes[idx]
+            defer wg.Done()
+            for j := range jobs {
+                hash := j.hash
+                idx := j.idx
                 chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
+
                 if err := mgr.DownloadChunk(hash); err != nil {
-                    results <- chunkResult{idx, nil, err}
+                    log.Printf("Error downloading chunk %d: %v", idx, err)
                     continue
                 }
+
                 data, err := os.ReadFile(chunkFilePath)
-                results <- chunkResult{idx, data, err}
+                if err != nil {
+                    log.Printf("Error reading chunk %d: %v", idx, err)
+                    continue
+                }
+
+                offset := int64(idx * chunkSize)
+                if _, err := outFile.WriteAt(data, offset); err != nil {
+                    log.Printf("Error writing chunk %d: %v", idx, err)
+                }
             }
         }()
     }
 
-    for i := range hashes {
-        jobs <- i
+    for idx, hash := range hashes {
+        jobs <- job{idx, hash}
     }
     close(jobs)
 
-    chunks := make([][]byte, len(hashes))
-    for i := 0; i < len(hashes); i++ {
-        res := <-results
-        if res.err != nil {
-            return res.err
-        }
-        chunks[res.index] = res.data
-    }
-
-    for _, data := range chunks {
-        if _, err := outFile.Write(data); err != nil {
-            return err
-        }
-    }
+    wg.Wait()
 
 	return nil
 }
