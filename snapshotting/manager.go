@@ -374,32 +374,59 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 		return errors.Wrapf(err, "reading recipe file for chunked download")
 	}
 
-	chunkIndex := 0
-	for hashStart := 0; hashStart < len(recipe); hashStart += md5.Size {
-		hashEnd := hashStart + md5.Size
-		if hashEnd >= len(recipe) {
-			break
-		}
-		hash := hex.EncodeToString(recipe[hashStart:hashEnd])
+	// Extract hashes
+    var hashes []string
+    for i := 0; i < len(recipe); i += md5.Size {
+        if i+md5.Size > len(recipe) {
+            break
+        }
+        hashes = append(hashes, hex.EncodeToString(recipe[i:i+md5.Size]))
+    }
 
-		chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
-		if err := mgr.DownloadChunk(hash); err != nil {
-			return errors.Wrapf(err, "downloading chunk %d of memory file", chunkIndex)
-		}
+    type chunkResult struct {
+        index int
+        data  []byte
+        err   error
+    }
 
-		chunkFile, err := os.Open(chunkFilePath)
-		if err != nil {
-			return errors.Wrapf(err, "opening chunk file %s", chunkFilePath)
-		}
+    numWorkers := 8 // TODO: tune based on CPU/network
+    jobs := make(chan int, len(hashes))
+    results := make(chan chunkResult, len(hashes))
 
-		if _, err := io.Copy(outFile, chunkFile); err != nil {
-			chunkFile.Close()
-			return errors.Wrapf(err, "writing chunk %d to memory file", chunkIndex)
-		}
+    for w := 0; w < numWorkers; w++ {
+        go func() {
+            for idx := range jobs {
+                hash := hashes[idx]
+                chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
+                if err := mgr.DownloadChunk(hash); err != nil {
+                    results <- chunkResult{idx, nil, err}
+                    continue
+                }
+                data, err := os.ReadFile(chunkFilePath)
+                results <- chunkResult{idx, data, err}
+            }
+        }()
+    }
 
-		chunkFile.Close()
-		chunkIndex++
-	}
+    for i := range hashes {
+        jobs <- i
+    }
+    close(jobs)
+
+    chunks := make([][]byte, len(hashes))
+    for i := 0; i < len(hashes); i++ {
+        res := <-results
+        if res.err != nil {
+            return res.err
+        }
+        chunks[res.index] = res.data
+    }
+
+    for _, data := range chunks {
+        if _, err := outFile.Write(data); err != nil {
+            return err
+        }
+    }
 
 	return nil
 }
