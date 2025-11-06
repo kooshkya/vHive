@@ -42,6 +42,7 @@ var (
 	pinnedFuncNum     *int
 	hostIface         *string
 	netPoolSize       *int
+	memFileOptimizationMode	*bool
 )
 
 var (
@@ -175,6 +176,7 @@ func main() {
 	clonePrefix := flag.String("clonePrefix", "172.18", "Prefix for node-accessible IP addresses of uVMs, expected subnet is /16")
 	dockerCredentials := flag.String("dockerCredentials", "", "Docker credentials for pulling images from inside a microVM") // https://github.com/firecracker-microvm/firecracker-containerd/blob/main/docker-credential-mmds
 	minioCredentials := flag.String("minioCredentials", "", "Minio credentials for uploading/downloading remote firecracker snapshots. Format: <minioAddr>;<minioAccessKey>;<minioSecretKey>")
+	memFileOptimizationMode = flag.Bool("memOpt", false, "Optimize the download and upload of MemoryFile in snapshots")
 	flag.Parse()
 
 	minioAddr := "localhost:9000"
@@ -229,6 +231,7 @@ func main() {
 		ctriface.WithMinioAccessKey(minioAccessKey),
 		ctriface.WithMinioSecretKey(minioSecretKey),
 		ctriface.WithSnapshotsDir(snapDir),
+		ctriface.WithMemFileOptimizationMode(*memFileOptimizationMode),
 	)
 	snapMgr = orch.GetSnapshotManager()
 
