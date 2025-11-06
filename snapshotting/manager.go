@@ -56,7 +56,7 @@ type SnapshotManager struct {
 	snapshots  map[string]*Snapshot
 	baseFolder string
 	chunking   bool
-	chunkRegistry map[string]bool
+	chunkRegistry sync.Map
 	lazy       bool
 	wsPulling  bool
 
@@ -69,7 +69,7 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 		snapshots:  make(map[string]*Snapshot),
 		baseFolder: baseFolder,
 		chunking:   chunking,
-		chunkRegistry: make(map[string]bool),
+		chunkRegistry: sync.Map{},
 		storage:    store,
 		wsPulling:  wsPulling,
 		lazy:       lazy,
@@ -210,6 +210,17 @@ func (mgr *SnapshotManager) UploadWSFile(revision string) error {
 	return nil
 }
 
+// Check if a chunk exists
+func (mgr *SnapshotManager) IsChunkRegistered(hash string) bool {
+	_, ok := mgr.chunkRegistry.Load(hash)
+	return ok
+}
+
+// Add a chunk to the registry
+func (mgr *SnapshotManager) RegisterChunk(hash string) {
+	mgr.chunkRegistry.Store(hash, true)
+}
+
 func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	if !mgr.chunking {
 		return mgr.uploadFile(snap.GetId(), snap.GetMemFilePath())
@@ -241,7 +252,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 			for job := range jobs {
 				chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, job.hash)
 				
-				if mgr.chunkRegistry[job.hash] {
+				if mgr.IsChunkRegistered(job.hash) {
 					continue
 				}
 	
@@ -263,7 +274,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 					continue
 				}
 
-				mgr.chunkRegistry[job.hash] = true
+				mgr.RegisterChunk(job.hash)
 			}
 		}()
 	}
@@ -315,7 +326,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 		return firstErr
 	}
 
-	
+
 	// Upload recipe file
 	recipeFilePath := snap.GetRecipeFilePath()
 	recipeFile, err := os.Create(recipeFilePath)
@@ -481,7 +492,7 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 	chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
 
 	// Return from in-memory registry if already downloaded
-	if mgr.chunkRegistry[hash] {
+	if mgr.IsChunkRegistered(hash) {
 		data, err := os.ReadFile(chunkFilePath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading cached chunk %s", hash)
@@ -512,7 +523,7 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 		return nil, errors.Wrapf(err, "writing chunk %s", hash)
 	}
 	// Mark as downloaded
-	mgr.chunkRegistry[hash] = true
+	mgr.RegisterChunk(hash)
 
 	return data, nil
 }
@@ -520,7 +531,7 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, hash)
 
-	if mgr.chunkRegistry[hash] {
+	if mgr.IsChunkRegistered(hash) {
 		return nil // already downloaded
 	}
 
@@ -528,7 +539,7 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 		return err
 	}
 
-	mgr.chunkRegistry[hash] = true
+	mgr.RegisterChunk(hash)
 	return nil
 }
 
