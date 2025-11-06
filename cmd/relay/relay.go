@@ -231,10 +231,9 @@ func main() {
 		ctriface.WithMinioAccessKey(minioAccessKey),
 		ctriface.WithMinioSecretKey(minioSecretKey),
 		ctriface.WithSnapshotsDir(snapDir),
-		ctriface.WithMemFileOptimizationMode(*memFileOptimizationMode),
 	)
 	snapMgr = orch.GetSnapshotManager()
-
+	snapMgr.SetMemFileOptimizationMode(*memFileOptimizationMode)
 	s := &http.Server{Addr: ":8080", Handler: h2c.NewHandler(http.HandlerFunc(handler), &http2.Server{})}
 	s.ListenAndServe()
 	// http.HandleFunc("/", handler)

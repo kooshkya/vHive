@@ -54,12 +54,6 @@ func WithUPF(isUPFEnabled bool) OrchestratorOption {
 	}
 }
 
-func WithMemFileOptimizationMode(memFileOptimizationMode bool) OrchestratorOption {
-	return func(o *Orchestrator) {
-		o.snapshotManager.MemFileOptimizationMode = memFileOptimizationMode
-	}
-}
-
 // WithSnapshotsDir Sets the directory where
 // snapshots should be stored
 func WithSnapshotsDir(snapshotsDir string) OrchestratorOption {

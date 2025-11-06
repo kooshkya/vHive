@@ -64,7 +64,7 @@ type SnapshotManager struct {
 	// Used to store remote snapshots
 	storage storage.ObjectStorage
 
-	MemFileOptimizationMode bool
+	memFileOptimizationMode bool
 }
 
 func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking, skipCleanup, lazy, wsPulling bool) *SnapshotManager {
@@ -76,7 +76,7 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 		storage:    store,
 		wsPulling:  wsPulling,
 		lazy:       lazy,
-		MemFileOptimizationMode: false,
+		memFileOptimizationMode: false,
 	}
 
 	// Clean & init basefolder unless skipping is requested
@@ -89,6 +89,10 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 	}
 
 	return manager
+}
+
+func (mgr *SnapshotManager) SetMemFileOptimizationMode(mode bool) {
+	mgr.memFileOptimizationMode = mode
 }
 
 // AcquireSnapshot returns a snapshot for the specified revision if it is available.
