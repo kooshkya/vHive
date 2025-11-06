@@ -510,7 +510,7 @@ func (mgr *SnapshotManager) OldDownloadMemFile(snap *Snapshot) error {	// TODO: 
 
 
 func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
-	if !mgr.MemFileOptimizationMode {
+	if !mgr.memFileOptimizationMode {
 		return mgr.OldDownloadMemFile(snap)
 	}
 
