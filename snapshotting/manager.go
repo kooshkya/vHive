@@ -586,7 +586,7 @@ func (mgr *SnapshotManager) OldDownloadMemFile(snap *Snapshot) error {	// TODO: 
 		chunkIndex++
 	}
 
-	log.Infof("Old DownloadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+	log.Infof("downloadMemFile for snapshot %s completed in %s, %d chunks downloaded", snap.GetId(), time.Since(startTime), chunkIndex)
 
 	return nil
 }
@@ -685,7 +685,7 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 
     wg.Wait()
 	
-	log.Infof("downloadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+	log.Infof("downloadMemFile for snapshot %s completed in %s, %d chunks downloaded", snap.GetId(), time.Since(startTime), len(hashes))
 	return nil
 }
 
