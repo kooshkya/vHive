@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -420,6 +421,8 @@ func (mgr *SnapshotManager) DownloadSnapshot(revision string) (*Snapshot, error)
 }
 
 func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
+	startTime := time.Now()
+
 	if !mgr.chunking {
 		return mgr.downloadFile(snap.GetId(), snap.GetMemFilePath(), filepath.Base(snap.GetMemFilePath()))
 	}
@@ -505,7 +508,8 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
     close(jobs)
 
     wg.Wait()
-
+	
+	log.Infof("downloadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
 	return nil
 }
 
