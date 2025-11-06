@@ -221,9 +221,59 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	}
 	defer file.Close()
 
+	
+	type chunkJob struct {
+		idx  int
+		hash string
+		data []byte
+	}
+	
+	jobs := make(chan chunkJob, 128) // buffered channel, TODO: tune length
+	errCh := make(chan error, 128) // TODO: tune length
+	var wg sync.WaitGroup
+	numWorkers := 8 // TODO: tune number
+	
+	// Worker goroutines for upload
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, job.hash)
+				
+				if mgr.chunkRegistry[job.hash] {
+					continue
+				}
+	
+				chunkFile, err := os.Create(chunkFilePath)
+				if err != nil {
+					errCh <- fmt.Errorf("creating chunk %s: %w", chunkFilePath, err)
+                	break
+				}
+	
+				if _, err := chunkFile.Write(job.data); err != nil {
+					chunkFile.Close()
+					errCh <- fmt.Errorf("writing chunk %d: %w", job.idx, err)
+					break
+				}
+				chunkFile.Close()
+	
+				if err := mgr.uploadFile(chunkPrefix, chunkFilePath); err != nil {
+					errCh <- fmt.Errorf("uploading chunk %d: %w", job.idx, err)
+					continue
+				}
+
+				mgr.chunkRegistry[job.hash] = true
+			}
+		}()
+	}
+
+
 	buffer := make([]byte, chunkSize)
 	chunkIndex := 0
 	recipe := make([]byte, 0)
+
+	// Sequential read & hash generation
 	for {
 		n, err := io.ReadFull(file, buffer)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
@@ -233,38 +283,39 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 			break
 		}
 
-		// Compute MD5 hash of chunk
 		hash := md5.Sum(buffer[:n])
 		recipe = append(recipe, hash[:]...)
 		chunkHash := hex.EncodeToString(hash[:])
-		chunkFilePath := filepath.Join(mgr.baseFolder, chunkPrefix, chunkHash)
 
-		if mgr.chunkRegistry[chunkHash] {
-			// Chunk file already exists, skip uploading
-			chunkIndex++
-			continue
-		}
+		// Send job to worker
+		dataCopy := make([]byte, n)
+		copy(dataCopy, buffer[:n])
+		jobs <- chunkJob{idx: chunkIndex, hash: chunkHash, data: dataCopy}
 
-		chunkFile, err := os.Create(chunkFilePath)
-		if err != nil {
-			return errors.Wrapf(err, "creating chunk file %s", chunkFilePath)
-		}
-
-		if _, err := chunkFile.Write(buffer); err != nil {
-			chunkFile.Close()
-			return errors.Wrapf(err, "writing to chunk file %s", chunkFilePath)
-		}
-		mgr.chunkRegistry[chunkHash] = true
-		mgr.uploadFile(chunkPrefix, chunkFilePath)
-
-		chunkFile.Close()
-		// os.Remove(chunkFilePath)
 		chunkIndex++
+
 		if err == io.EOF {
 			break
 		}
 	}
+	close(jobs)
+	wg.Wait()
+	close(errCh)
 
+	// Check for errors
+	var firstErr error
+	for err := range errCh {
+		log.Printf("Chunk upload error: %v", err) // print all errors
+		if firstErr == nil {
+			firstErr = err // remember first error to return
+		}
+	}
+
+	if firstErr != nil {
+		return firstErr
+	}
+
+	
 	// Upload recipe file
 	recipeFilePath := snap.GetRecipeFilePath()
 	recipeFile, err := os.Create(recipeFilePath)
