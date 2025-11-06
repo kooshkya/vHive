@@ -312,7 +312,7 @@ func (mgr *SnapshotManager) oldUploadMemFile(snap *Snapshot) error {
 	mgr.uploadFile(snap.GetId(), recipeFilePath)
 	os.Remove(recipeFilePath)
 
-	log.Infof("Old uploadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+	log.Infof("Old uploadMemFile for snapshot %s completed in %s, chunk count: %d", snap.GetId(), time.Since(startTime), chunkIndex + 1)
 
 	return nil
 }
@@ -444,7 +444,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	mgr.uploadFile(snap.GetId(), recipeFilePath)
 	os.Remove(recipeFilePath)
 
-	log.Infof("uploadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+	log.Infof("uploadMemFile for snapshot %s completed in %s, chunk count: %d", snap.GetId(), time.Since(startTime), chunkIndex + 1)
 	return nil
 }
 
@@ -586,7 +586,7 @@ func (mgr *SnapshotManager) OldDownloadMemFile(snap *Snapshot) error {	// TODO: 
 		chunkIndex++
 	}
 
-	log.Infof("downloadMemFile for snapshot %s completed in %s, %d chunks downloaded", snap.GetId(), time.Since(startTime), chunkIndex)
+	log.Infof("Old downloadMemFile for snapshot %s completed in %s, %d chunks downloaded", snap.GetId(), time.Since(startTime), chunkIndex + 1)
 
 	return nil
 }
