@@ -245,7 +245,9 @@ func (mgr *SnapshotManager) oldUploadMemFile(snap *Snapshot) error {
 	startTime := time.Now()
 
 	if !mgr.chunking {
-		return mgr.uploadFile(snap.GetId(), snap.GetMemFilePath())
+		error := mgr.uploadFile(snap.GetId(), snap.GetMemFilePath())
+		log.Infof("unchunked uploadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+		return error
 	}
 
 	file, err := os.Open(snap.GetMemFilePath())
@@ -325,7 +327,9 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	startTime := time.Now()
 
 	if !mgr.chunking {
-		return mgr.uploadFile(snap.GetId(), snap.GetMemFilePath())
+		error := mgr.uploadFile(snap.GetId(), snap.GetMemFilePath())
+		log.Infof("unchunked uploadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+		return error
 	}
 
 	file, err := os.Open(snap.GetMemFilePath())
@@ -515,7 +519,9 @@ func (mgr *SnapshotManager) OldDownloadMemFile(snap *Snapshot) error {	// TODO: 
 	startTime := time.Now()
 
 	if !mgr.chunking {
-		return mgr.downloadFile(snap.GetId(), snap.GetMemFilePath(), filepath.Base(snap.GetMemFilePath()))
+		error := mgr.downloadFile(snap.GetId(), snap.GetMemFilePath(), filepath.Base(snap.GetMemFilePath()))
+		log.Infof("unchunked downloadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+		return error
 	}
 
 	recipeFilePath := snap.GetRecipeFilePath()
@@ -593,7 +599,9 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 	startTime := time.Now()
 
 	if !mgr.chunking {
-		return mgr.downloadFile(snap.GetId(), snap.GetMemFilePath(), filepath.Base(snap.GetMemFilePath()))
+		error := mgr.downloadFile(snap.GetId(), snap.GetMemFilePath(), filepath.Base(snap.GetMemFilePath()))
+		log.Infof("unchunked downloadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
+		return error
 	}
 
 	recipeFilePath := snap.GetRecipeFilePath()
