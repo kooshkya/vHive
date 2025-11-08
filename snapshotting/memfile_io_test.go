@@ -37,9 +37,9 @@ const (
 )
 
 func init() {
-	flag.Int64Var(&fileSize, "fileSize", 512*1024*1024, "size of mem_file in bytes")
-	flag.IntVar(&customChunkSize, "chunkSize", 512*1024, "custom chunk size in bytes")
-	flag.BoolVar(&memFileOptimizationMode, "memOpt", true, "enable memfile optimization")
+	flag.Int64Var(&fileSize, "fileSize", 512, "size of mem_file in MegaBytes")
+	flag.IntVar(&customChunkSize, "chunkSize", 512, "custom chunk size in KiboBytes")
+	flag.BoolVar(&memFileOptimizationMode, "memOpt", false, "enable memfile optimization")
 	flag.IntVar(&memLoadWorkerCountArg, "workerCount", 8, "number of workers for memfile upload/download")
 }
 
@@ -54,6 +54,8 @@ func CreateRandomMemFile() {
 
 	buf := make([]byte, bufferSize)
 	var written int64
+
+	fileSize = fileSize * 1024 * 1024
 
 	for written < fileSize {
 		toWrite := bufferSize
@@ -101,7 +103,7 @@ func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
 func downloadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
 	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
-	mgr.SetCustomChunkSize(customChunkSize)
+	mgr.SetCustomChunkSize(customChunkSize * 1024)
 	mgr.SetMemLoadWorkerCount(memLoadWorkerCountArg)
 
 	snap, err := mgr.InitSnapshot(revision, imageName)
