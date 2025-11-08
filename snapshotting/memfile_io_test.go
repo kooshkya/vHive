@@ -80,7 +80,7 @@ func CreateRandomMemFile() {
 func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
 	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
-	mgr.SetCustomChunkSize(customChunkSize)
+	mgr.SetCustomChunkSize(customChunkSize * 1024)
 	mgr.SetMemLoadWorkerCount(memLoadWorkerCountArg)
 
 	snap, err := mgr.InitSnapshot(revision, imageName)
