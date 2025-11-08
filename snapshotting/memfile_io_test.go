@@ -66,6 +66,51 @@ func CreateRandomMemFile() {
 	log.Printf("%vB file created at %s", fileSize, mem_file_path)
 }
 
+func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
+	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
+	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
+
+	snap, err := mgr.InitSnapshot(revision, imageName)
+	if err != nil {
+		t.Fatalf("failed to InitSnapshot: %v", err)
+	}
+
+	err = mgr.CommitSnapshot(revision)
+	if err != nil {
+		t.Fatalf("failed to CommitSnapshot: %v", err)
+	}
+
+	fmt.Println("Starting upload test...")
+	start := time.Now()
+	if err := mgr.uploadMemFile(snap); err != nil {
+		t.Fatalf("uploadMemFile failed: %v", err)
+	}
+	fmt.Printf("Upload completed in %s\n", time.Since(start))
+}
+
+func downloadTest(objectStore storage.ObjectStorage, t *testing.T) {
+	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
+	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
+
+	snap, err := mgr.InitSnapshot(revision, imageName)
+	if err != nil {
+		t.Fatalf("failed to InitSnapshot: %v", err)
+	}
+
+	err = mgr.CommitSnapshot(revision)
+	if err != nil {
+		t.Fatalf("failed to CommitSnapshot: %v", err)
+	}
+
+	fmt.Println("Starting download test...")
+
+	start := time.Now()
+	if err := mgr.downloadMemFile(snap); err != nil {
+		t.Fatalf("downloadMemFile failed: %v", err)
+	}
+	fmt.Printf("Download completed in %s\n", time.Since(start))
+}
+
 func TestMemFileIO(t *testing.T) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	fmt.Println("=== Memory File Upload/Download Test ===")
@@ -88,30 +133,12 @@ func TestMemFileIO(t *testing.T) {
 		t.Fatalf("failed to create MinIO storage: %v", err)
 	}
 
-	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
-	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
+	uploadTest(objectStore, t)
 
-	snap, err := mgr.InitSnapshot(revision, imageName)
-	if err != nil {
-		t.Fatalf("failed to InitSnapshot: %v", err)
+	os.RemoveAll(baseFolder)
+	if err := os.MkdirAll(revisionDir, 0777); err != nil {
+		t.Fatalf("creating base folder: %v", err)
 	}
-
-	err = mgr.CommitSnapshot(revision)
-	if err != nil {
-		t.Fatalf("failed to CommitSnapshot: %v", err)
-	}
-
-	fmt.Println("Starting upload test...")
-	start := time.Now()
-	if err := mgr.uploadMemFile(snap); err != nil {
-		t.Fatalf("uploadMemFile failed: %v", err)
-	}
-	fmt.Printf("Upload completed in %s\n", time.Since(start))
-
-	fmt.Println("Starting download test...")
-	start = time.Now()
-	if err := mgr.downloadMemFile(snap); err != nil {
-		t.Fatalf("downloadMemFile failed: %v", err)
-	}
-	fmt.Printf("Download completed in %s\n", time.Since(start))
+	
+	downloadTest(objectStore, t)
 }
