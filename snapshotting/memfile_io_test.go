@@ -18,8 +18,10 @@ import (
 const (
 	fileSize				= 512 * 1024 * 1024 // in Bytes, size of mem_file to create
 	chunking                = true
+	customChunkSize				= 512 * 1024	// in B
 	memFileOptimizationMode = true	// use optimized download and upload
-
+	memLoadWorkerCount		= 8
+	
 	baseFolder              = "./tmp_test"
 	revision				= "test-revision"
 	bufferSize 				= 4 * 1024 * 1024 // in Bytes
@@ -66,9 +68,12 @@ func CreateRandomMemFile() {
 	log.Printf("%vB file created at %s", fileSize, mem_file_path)
 }
 
+
 func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
 	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
+	mgr.SetCustomChunkSize(customChunkSize)
+	mgr.SetMemLoadWorkerCount(memLoadWorkerCount)
 
 	snap, err := mgr.InitSnapshot(revision, imageName)
 	if err != nil {
@@ -88,9 +93,12 @@ func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	fmt.Printf("Upload completed in %s\n", time.Since(start))
 }
 
+
 func downloadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
 	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
+	mgr.SetCustomChunkSize(customChunkSize)
+	mgr.SetMemLoadWorkerCount(memLoadWorkerCount)
 
 	snap, err := mgr.InitSnapshot(revision, imageName)
 	if err != nil {
@@ -139,6 +147,6 @@ func TestMemFileIO(t *testing.T) {
 	if err := os.MkdirAll(revisionDir, 0777); err != nil {
 		t.Fatalf("creating base folder: %v", err)
 	}
-	
+
 	downloadTest(objectStore, t)
 }
