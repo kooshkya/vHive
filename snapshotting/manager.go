@@ -43,6 +43,7 @@ import (
 const (
 	chunkPrefix = "_chunks"
 	chunkSize   = 512 * 1024 // 512 KB
+	memLoadWorkerCount = 8
 )
 
 func GetChunkSize() uint64 {
@@ -348,7 +349,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	jobs := make(chan chunkJob, 128) // buffered channel, TODO: tune length
 	errCh := make(chan error, 128) // TODO: tune length
 	var wg sync.WaitGroup
-	numWorkers := 8 // TODO: tune number
+	numWorkers := memLoadWorkerCount // TODO: tune number
 	
 	// Worker goroutines for upload
 	for w := 0; w < numWorkers; w++ {
@@ -658,7 +659,7 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 
 	var wg sync.WaitGroup
     jobs := make(chan job, len(hashes))
-    numWorkers := 8 // TODO: tune based on CPU/network
+    numWorkers := memLoadWorkerCount // TODO: tune based on CPU/network
 
     for w := 0; w < numWorkers; w++ {
         wg.Add(1)
