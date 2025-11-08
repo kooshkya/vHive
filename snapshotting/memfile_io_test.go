@@ -2,6 +2,7 @@ package snapshotting
 
 import (
 	"crypto/rand"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -14,35 +15,43 @@ import (
 	"github.com/vhive-serverless/vhive/storage"
 )
 
-
-const (
-	fileSize				= 512 * 1024 * 1024 // in Bytes, size of mem_file to create
-	chunking                = true
-	customChunkSize				= 512 * 1024	// in B
-	memFileOptimizationMode = true	// use optimized download and upload
-	memLoadWorkerCount		= 8
-	
-	baseFolder              = "./tmp_test"
-	revision				= "test-revision"
-	bufferSize 				= 4 * 1024 * 1024 // in Bytes
-	imageName               = "image-name-sample"
-	lazyMode                = false		// don't change this
-	wsPulling               = false		// don't change this
-	snapshotsBucket         = "memfile-io-test-bucket"
-	minioAddr               = "10.0.1.1:9000"
-	minioAccessKey          = "minio"
-	minioSecretKey          = "minio123"
+var (
+	fileSize               int64
+	customChunkSize        int
+	memFileOptimizationMode bool
+	memLoadWorkerCountArg     int
 )
 
+const (
+	chunking        = true
+	baseFolder       = "./tmp_test"
+	revision         = "test-revision"
+	bufferSize       = 4 * 1024 * 1024 // in Bytes
+	imageName        = "image-name-sample"
+	lazyMode         = false
+	wsPulling        = false
+	snapshotsBucket  = "memfile-io-test-bucket"
+	minioAddr        = "10.0.1.1:9000"
+	minioAccessKey   = "minio"
+	minioSecretKey   = "minio123"
+)
+
+func init() {
+	flag.Int64Var(&fileSize, "fileSize", 512*1024*1024, "size of mem_file in bytes")
+	flag.IntVar(&customChunkSize, "chunkSize", 512*1024, "custom chunk size in bytes")
+	flag.BoolVar(&memFileOptimizationMode, "memOpt", true, "enable memfile optimization")
+	flag.IntVar(&memLoadWorkerCountArg, "workerCount", 8, "number of workers for memfile upload/download")
+}
 
 func CreateRandomMemFile() {
-	mem_file_path := filepath.Join(baseFolder, revision, "mem_file")
-	log.Printf("mem file path to create: %s", mem_file_path)
-	file, err := os.Create(mem_file_path)
+	memFilePath := filepath.Join(baseFolder, revision, "mem_file")
+	log.Printf("mem file path to create: %s", memFilePath)
+	file, err := os.Create(memFilePath)
 	if err != nil {
 		log.Fatalf("failed to create file: %v", err)
 	}
 	defer file.Close()
+
 	buf := make([]byte, bufferSize)
 	var written int64
 
@@ -52,36 +61,32 @@ func CreateRandomMemFile() {
 			toWrite = int(remaining)
 		}
 
-		_, err := rand.Read(buf[:toWrite])
-		if err != nil {
+		if _, err := rand.Read(buf[:toWrite]); err != nil {
 			log.Fatalf("failed to generate random data: %v", err)
 		}
 
-		_, err = file.Write(buf[:toWrite])
-		if err != nil {
+		if _, err := file.Write(buf[:toWrite]); err != nil {
 			log.Fatalf("failed to write to file: %v", err)
 		}
 
 		written += int64(toWrite)
 	}
 
-	log.Printf("%vB file created at %s", fileSize, mem_file_path)
+	log.Printf("%vB file created at %s", fileSize, memFilePath)
 }
-
 
 func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
 	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
 	mgr.SetCustomChunkSize(customChunkSize)
-	mgr.SetMemLoadWorkerCount(memLoadWorkerCount)
+	mgr.SetMemLoadWorkerCount(memLoadWorkerCountArg)
 
 	snap, err := mgr.InitSnapshot(revision, imageName)
 	if err != nil {
 		t.Fatalf("failed to InitSnapshot: %v", err)
 	}
 
-	err = mgr.CommitSnapshot(revision)
-	if err != nil {
+	if err := mgr.CommitSnapshot(revision); err != nil {
 		t.Fatalf("failed to CommitSnapshot: %v", err)
 	}
 
@@ -93,25 +98,22 @@ func uploadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	fmt.Printf("Upload completed in %s\n", time.Since(start))
 }
 
-
 func downloadTest(objectStore storage.ObjectStorage, t *testing.T) {
 	mgr := NewSnapshotManager(baseFolder, objectStore, chunking, true, lazyMode, wsPulling)
 	mgr.SetMemFileOptimizationMode(memFileOptimizationMode)
 	mgr.SetCustomChunkSize(customChunkSize)
-	mgr.SetMemLoadWorkerCount(memLoadWorkerCount)
+	mgr.SetMemLoadWorkerCount(memLoadWorkerCountArg)
 
 	snap, err := mgr.InitSnapshot(revision, imageName)
 	if err != nil {
 		t.Fatalf("failed to InitSnapshot: %v", err)
 	}
 
-	err = mgr.CommitSnapshot(revision)
-	if err != nil {
+	if err := mgr.CommitSnapshot(revision); err != nil {
 		t.Fatalf("failed to CommitSnapshot: %v", err)
 	}
 
 	fmt.Println("Starting download test...")
-
 	start := time.Now()
 	if err := mgr.downloadMemFile(snap); err != nil {
 		t.Fatalf("downloadMemFile failed: %v", err)
@@ -120,6 +122,7 @@ func downloadTest(objectStore storage.ObjectStorage, t *testing.T) {
 }
 
 func TestMemFileIO(t *testing.T) {
+	flag.Parse() // parse command line flags
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	fmt.Println("=== Memory File Upload/Download Test ===")
 
