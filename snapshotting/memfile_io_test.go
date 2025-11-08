@@ -128,7 +128,8 @@ func TestMemFileIO(t *testing.T) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	fmt.Println("=== Memory File Upload/Download Test ===")
 
-	if fileSize * 1024 * 1024 / (chunkSize * 1024) > 64000 {
+	chunkCount := (fileSize * 1024 * 1024) / (int64(customChunkSize) * 1024)
+	if chunkCount > 64000 {
 		t.Error("Too many chunks (>64000)! You will hit FS link cap!")
 	}
 
