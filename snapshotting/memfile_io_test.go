@@ -128,6 +128,10 @@ func TestMemFileIO(t *testing.T) {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	fmt.Println("=== Memory File Upload/Download Test ===")
 
+	if fileSize * 1024 * 1024 / (chunkSize * 1024) > 64000 {
+		t.Error("Too many chunks (>64000)! You will hit FS link cap!")
+	}
+
 	revisionDir := filepath.Join(baseFolder, revision)
 	if err := os.MkdirAll(revisionDir, 0777); err != nil {
 		t.Fatalf("creating base folder: %v", err)
