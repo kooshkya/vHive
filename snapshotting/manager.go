@@ -66,6 +66,7 @@ type SnapshotManager struct {
 	storage storage.ObjectStorage
 
 	memFileOptimizationMode bool
+	customChunkSize	int
 }
 
 func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking, skipCleanup, lazy, wsPulling bool) *SnapshotManager {
@@ -78,6 +79,7 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 		wsPulling:  wsPulling,
 		lazy:       lazy,
 		memFileOptimizationMode: false,
+		customChunkSize: chunkSize,
 	}
 
 	// Clean & init basefolder unless skipping is requested
@@ -242,6 +244,14 @@ func (mgr *SnapshotManager) RegisterChunk(hash string) {
 	mgr.chunkRegistry.Store(hash, true)
 }
 
+func (mgr *SnapshotManager) SetCustomChunkSize(newSize int) {
+	mgr.customChunkSize = newSize
+}
+
+func (mgr *SnapshotManager) GetCustomChunkSize() int {
+	return mgr.customChunkSize
+}
+
 func (mgr *SnapshotManager) oldUploadMemFile(snap *Snapshot) error {
 	startTime := time.Now()
 
@@ -257,7 +267,7 @@ func (mgr *SnapshotManager) oldUploadMemFile(snap *Snapshot) error {
 	}
 	defer file.Close()
 
-	buffer := make([]byte, chunkSize)
+	buffer := make([]byte, mgr.GetCustomChunkSize())
 	chunkIndex := 0
 	recipe := make([]byte, 0)
 	for {
@@ -390,7 +400,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	}
 
 
-	buffer := make([]byte, chunkSize)
+	buffer := make([]byte, mgr.GetCustomChunkSize())
 	chunkIndex := 0
 	recipe := make([]byte, 0)
 
@@ -675,7 +685,7 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
                     continue
                 }
 
-                offset := int64(idx * chunkSize)
+                offset := int64(idx * mgr.GetCustomChunkSize())
                 if _, err := outFile.WriteAt(chunk_bytes, offset); err != nil {
                     log.Printf("Error writing chunk %d: %v", idx, err)
                 }
@@ -847,7 +857,7 @@ func (mgr *SnapshotManager) downloadWorkingSet(snap *Snapshot) error {
 
 		// Calculate which chunk this page belongs to
 		byteOffset := pageOffset * 4096 // Assuming 4KB pages
-		chunkIndex := byteOffset / chunkSize
+		chunkIndex := byteOffset / uint64(mgr.GetCustomChunkSize())
 
 		// Get chunk hash from recipe
 		hashStart := int(chunkIndex) * md5.Size
