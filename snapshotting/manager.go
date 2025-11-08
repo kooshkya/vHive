@@ -365,18 +365,21 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 				chunkFile, err := os.Create(chunkFilePath)
 				if err != nil {
 					errCh <- fmt.Errorf("creating chunk %s: %w", chunkFilePath, err)
+					log.Errorf("creating chunk %s: %v", chunkFilePath, err)
                 	break
 				}
 	
 				if _, err := chunkFile.Write(job.data); err != nil {
 					chunkFile.Close()
 					errCh <- fmt.Errorf("writing chunk %d: %w", job.idx, err)
+					log.Errorf("writing chunk %d: %v", job.idx, err)
 					break
 				}
 				chunkFile.Close()
 	
 				if err := mgr.uploadFile(chunkPrefix, chunkFilePath); err != nil {
 					errCh <- fmt.Errorf("uploading chunk %d: %w", job.idx, err)
+					log.Errorf("uploading chunk %d: %v", job.idx, err)
 					continue
 				}
 
