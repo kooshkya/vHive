@@ -43,7 +43,6 @@ import (
 const (
 	chunkPrefix = "_chunks"
 	chunkSize   = 512 * 1024 // 512 KB
-	memLoadWorkerCount = 8
 )
 
 func GetChunkSize() uint64 {
@@ -67,6 +66,7 @@ type SnapshotManager struct {
 
 	memFileOptimizationMode bool
 	customChunkSize	int
+	memLoadWorkerCount int
 }
 
 func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking, skipCleanup, lazy, wsPulling bool) *SnapshotManager {
@@ -80,6 +80,7 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 		lazy:       lazy,
 		memFileOptimizationMode: false,
 		customChunkSize: chunkSize,
+		memLoadWorkerCount: 8,
 	}
 
 	// Clean & init basefolder unless skipping is requested
@@ -96,6 +97,10 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 
 func (mgr *SnapshotManager) SetMemFileOptimizationMode(mode bool) {
 	mgr.memFileOptimizationMode = mode
+}
+
+func (mgr *SnapshotManager) SetMemLoadWorkerCount(count int) {
+	mgr.memLoadWorkerCount = count
 }
 
 // AcquireSnapshot returns a snapshot for the specified revision if it is available.
@@ -359,7 +364,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	jobs := make(chan chunkJob, 128) // buffered channel, TODO: tune length
 	errCh := make(chan error, 128) // TODO: tune length
 	var wg sync.WaitGroup
-	numWorkers := memLoadWorkerCount // TODO: tune number
+	numWorkers := mgr.memLoadWorkerCount // TODO: tune number
 	
 	// Worker goroutines for upload
 	for w := 0; w < numWorkers; w++ {
@@ -669,7 +674,7 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 
 	var wg sync.WaitGroup
     jobs := make(chan job, len(hashes))
-    numWorkers := memLoadWorkerCount // TODO: tune based on CPU/network
+    numWorkers := mgr.memLoadWorkerCount // TODO: tune based on CPU/network
 
     for w := 0; w < numWorkers; w++ {
         wg.Add(1)
