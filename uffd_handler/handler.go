@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+	"sync/atomic"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/vhive-serverless/vhive/snapshotting"
@@ -222,56 +223,55 @@ func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapp
 	}
 
 	startTime := time.Now()
-	counter := 0
+	var counter int32 // atomic counter for thread safety
+
 	defer func() {
-		log.Debugf("Pre-inserting working set of %d pages in %v", counter, time.Since(startTime))
+		log.Debugf("Pre-inserting working set of %d pages in %v", atomic.LoadInt32(&counter), time.Since(startTime))
 	}()
+
+	// Buffered channel to distribute PFNs to workers
+	pfnCh := make(chan uint64, len(po.workingSet))
 
 	for _, pfn := range po.workingSet {
 		pageAddr := pfn * po.pageSize
-		if pageAddr >= region.Offset && pageAddr < region.Offset+region.Size {
-			counter++
-
-			src := uintptr(0)
-			if !po.lazy {
-				src = po.backingBuffer + uintptr(pageAddr)
-			} else {
-				// In lazy mode, read the MD5 hash from the recipe file
-				recipeOffset := (pageAddr) / po.snapMgr.GetChunkSize() * md5.Size
-				hashBytes := (*[md5.Size]byte)(unsafe.Pointer(po.backingBuffer + uintptr(recipeOffset)))
-				var hashKey [md5.Size]byte
-				copy(hashKey[:], hashBytes[:])
-				mappedAddr, err := po.mapChunk(hashKey)
-
-				if err != nil {
-					log.Errorf("Failed to map chunk: %v", err)
-					return
-				}
-
-				src = mappedAddr + (uintptr(pageAddr) % uintptr(po.snapMgr.GetChunkSize()))
-			}
-
-			copy := UffdIoCopy{
-				Dst:  pageAddr + region.BaseHostVirtAddr,
-				Src:  uint64(src),
-				Len:  po.pageSize,
-				Mode: UFFDIO_COPY_MODE_DONTWAKE,
-			}
-
-			_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(uffd), UFFDIO_COPY, uintptr(unsafe.Pointer(&copy)))
-			if errno != 0 {
-				if errno == unix.EAGAIN {
-					// A 'remove' event is blocking us
-					continue
-				}
-				if errno == unix.EEXIST {
-					// Page already exists, this is ok
-					continue
-				}
-				log.Errorf("UFFD copy failed: %v", errno)
-			}
+		if pageAddr >= region.Offset && pageAddr < region.Offset + region.Size {
+			pfnCh <- pfn
 		}
 	}
+	close(pfnCh)
+
+	numWorkers := 8 // TODO: tune this parameter
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func() {
+			defer wg.Done()
+			for pfn := range pfnCh {
+				pageAddr := pfn * po.pageSize
+				atomic.AddInt32(&counter, 1)
+
+				src := po.backingBuffer + uintptr(pageAddr)
+
+				copy := UffdIoCopy{
+					Dst:  pageAddr + region.BaseHostVirtAddr,
+					Src:  uint64(src),
+					Len:  po.pageSize,
+					Mode: UFFDIO_COPY_MODE_DONTWAKE,
+				}
+
+				_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(uffd), UFFDIO_COPY, uintptr(unsafe.Pointer(&copy)))
+				if errno != 0 {
+					if errno == unix.EAGAIN || errno == unix.EEXIST {
+						continue
+					}
+					log.Errorf("UFFD copy failed: %v", errno)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 }
 
 // Old version, keeping for benchmarking purposes. Should delete later if changes are accepted
