@@ -218,6 +218,7 @@ func (po *PageOperations) PopulateFromFile(uffd int, region *GuestRegionUffdMapp
 
 func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapping) {
 	if po.lazy {
+		log.Infof("Lazy mode detected, resorting to old insertWorkingSet")
 		po.insertWorkingSetOld(uffd, region)
 		return
 	}
@@ -226,7 +227,7 @@ func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapp
 	var counter int32 // atomic counter for thread safety
 
 	defer func() {
-		log.Debugf("Pre-inserting working set of %d pages in %v", atomic.LoadInt32(&counter), time.Since(startTime))
+		log.Infof("Pre-inserting working set of %d pages in %v", atomic.LoadInt32(&counter), time.Since(startTime))
 	}()
 
 	// Buffered channel to distribute PFNs to workers
@@ -279,7 +280,7 @@ func (po *PageOperations) insertWorkingSetOld(uffd int, region *GuestRegionUffdM
 	startTime := time.Now()
 	counter := 0
 	defer func() {
-		log.Debugf("(Old Version) Pre-inserting working set of %d pages in %v", counter, time.Since(startTime))
+		log.Infof("(Old Version) Pre-inserting working set of %d pages in %v", counter, time.Since(startTime))
 	}()
 
 	for _, pfn := range po.workingSet {
