@@ -147,7 +147,7 @@ type PageOperations struct {
 
 // NewPageOperations creates a new PageOperations instance
 // TODO: Remove mappedChunks from signature: it's obsolete
-func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint64, lazy bool, mappedChunks map[[md5.Size]byte]MappedChunkInfo, snapMgr *snapshotting.SnapshotManager) *PageOperations {
+func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint64, lazy bool, snapMgr *snapshotting.SnapshotManager) *PageOperations {
 	return &PageOperations{
 		backingBuffer:      backingBuffer,
 		pageSize:           pageSize,
@@ -696,7 +696,6 @@ type Runtime struct {
 	tracer            *PageFaultTracer
 	lazy              bool
 	snapMgr           *snapshotting.SnapshotManager
-	mappedChunks      map[[md5.Size]byte]MappedChunkInfo
 	pageOps           *PageOperations
 }
 
@@ -721,13 +720,10 @@ func NewRuntime(conn *net.UnixConn, backingFile *os.File, wsFile *os.File, trace
 		return nil, fmt.Errorf("mmap on backing file failed: %w", err)
 	}
 
-	var mappedChunks map[[md5.Size]byte]MappedChunkInfo
-
 	ws := make([]uint64, 0)
 	if lazy {
 		// in case of lazy, the backing memory file is just a recipe file containing md5 hashes
 		backingMemorySize *= uint64(snapMgr.GetChunkSize()) / uint64(md5.Size)
-		mappedChunks = make(map[[md5.Size]byte]MappedChunkInfo)
 	}
 
 	if wsFile != nil {
@@ -756,7 +752,7 @@ func NewRuntime(conn *net.UnixConn, backingFile *os.File, wsFile *os.File, trace
 
 	// Create PageOperations with a reasonable default page size
 	// The actual page size will be validated when handlers are created
-	pageOps := NewPageOperations(backingMemoryPtr, 4096, ws, lazy, mappedChunks, snapMgr)
+	pageOps := NewPageOperations(backingMemoryPtr, 4096, ws, lazy, snapMgr)
 
 	rt := &Runtime{
 		stream:            conn,
@@ -768,7 +764,6 @@ func NewRuntime(conn *net.UnixConn, backingFile *os.File, wsFile *os.File, trace
 		tracer:            tracer,
 		lazy:              lazy,
 		snapMgr:           snapMgr,
-		mappedChunks:      mappedChunks,
 		pageOps:           pageOps,
 	}
 
