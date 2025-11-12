@@ -717,7 +717,7 @@ type Runtime struct {
 	tracer            *PageFaultTracer
 	lazy              bool
 	snapMgr           *snapshotting.SnapshotManager
-	mappedChunks      map[[md5.Size]byte]uintptr
+	mappedChunks      map[[md5.Size]byte]MappedChunkInfo
 	pageOps           *PageOperations
 }
 
