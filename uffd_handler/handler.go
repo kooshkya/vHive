@@ -405,38 +405,6 @@ func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	return mappedAddr, nil
 }
 
-func (po *PageOperations) mapChunkOld(hashKey [md5.Size]byte) (uintptr, error) {
-	// Chunk not found, need to mmap it
-	hash := hex.EncodeToString(hashKey[:])
-	po.snapMgr.DownloadChunk(hash)
-	chunkFileName := po.snapMgr.GetChunkFilePath(hash)
-	chunkFile, err := os.Open(chunkFileName)
-	if err != nil {
-		return 0, fmt.Errorf("failed to open chunk file %s: %w", chunkFileName, err)
-	}
-
-	chunkMem, err := unix.Mmap(
-		int(chunkFile.Fd()),
-		0,
-		int(po.snapMgr.GetChunkSize()),
-		unix.PROT_READ,
-		unix.MAP_PRIVATE,
-	)
-	if err != nil {
-		chunkFile.Close()
-		return 0, fmt.Errorf("failed to mmap chunk file %s: %w", chunkFileName, err)
-	}
-
-	chunkFile.Close()
-	mappedAddr := uintptr(unsafe.Pointer(&chunkMem[0]))
-	po.mappedChunks[hashKey] = MappedChunkInfo{
-		addr: mappedAddr,
-		chunkContent: nil,
-	}
-
-	return mappedAddr, nil
-}
-
 // ZeroOut zeros out a page
 func (po *PageOperations) ZeroOut(uffd int, addr uint64) bool {
 	zero := UffdIoZeropage{
