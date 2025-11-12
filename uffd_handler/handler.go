@@ -222,7 +222,6 @@ func (po *PageOperations) PopulateFromFile(uffd int, region *GuestRegionUffdMapp
 }
 
 func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapping) {
-	po.insertWorkingSetOld(uffd, region)
 	startTime := time.Now()
 	var counter int32
 
