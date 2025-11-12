@@ -140,11 +140,13 @@ type PageOperations struct {
 	workingSet         []uint64
 	firstPageFaultOnce *sync.Once
 	lazy               bool
-	mappedChunks       map[[md5.Size]byte]MappedChunkInfo
+	mappedChunks       sync.Map
+	keyLocks			sync.Map
 	snapMgr            *snapshotting.SnapshotManager
 }
 
 // NewPageOperations creates a new PageOperations instance
+// TODO: Remove mappedChunks from signature: it's obsolete
 func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint64, lazy bool, mappedChunks map[[md5.Size]byte]MappedChunkInfo, snapMgr *snapshotting.SnapshotManager) *PageOperations {
 	return &PageOperations{
 		backingBuffer:      backingBuffer,
@@ -152,7 +154,6 @@ func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint
 		workingSet:         workingSet,
 		firstPageFaultOnce: &sync.Once{},
 		lazy:               lazy,
-		mappedChunks:       mappedChunks,
 		snapMgr:            snapMgr,
 	}
 }
@@ -386,10 +387,20 @@ func (po *PageOperations) insertWorkingSetOld(uffd int, region *GuestRegionUffdM
 
 func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	// Return already mapped chunk if exists
-	if mapInfo, ok := po.mappedChunks[hashKey]; ok {
-		return mapInfo.addr, nil
+	if value, ok := po.mappedChunks.Load(hashKey); ok {
+		return value.(*MappedChunkInfo).addr, nil
 	}
 
+	// Ensure per-key lock exists
+	lockIface, _ := po.keyLocks.LoadOrStore(hashKey, &sync.Mutex{})
+	keyMu := lockIface.(*sync.Mutex)
+	keyMu.Lock()
+	defer keyMu.Unlock()
+	
+	if value, ok := po.mappedChunks.Load(hashKey); ok {
+		return value.(*MappedChunkInfo).addr, nil
+	}
+		
 	hash := hex.EncodeToString(hashKey[:])
 	chunkContent, err := po.snapMgr.DownloadAndReturnChunk(hash)
 	if err != nil {
@@ -397,10 +408,10 @@ func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	}
 
 	mappedAddr := uintptr(unsafe.Pointer(&chunkContent[0]))
-	po.mappedChunks[hashKey] = MappedChunkInfo{
-		addr: mappedAddr,
+	po.mappedChunks.Store(hashKey, &MappedChunkInfo{
+		addr:         mappedAddr,
 		chunkContent: chunkContent,
-	}
+	})
 
 	return mappedAddr, nil
 }
