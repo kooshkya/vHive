@@ -382,6 +382,20 @@ func (po *PageOperations) insertWorkingSetOld(uffd int, region *GuestRegionUffdM
 func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	// Chunk not found, need to mmap it
 	hash := hex.EncodeToString(hashKey[:])
+	chunkContent, err := po.snapMgr.DownloadAndReturnChunk(hash)
+	if err != nil {
+		return 0, fmt.Errorf("failed to download and return chunk file %s: %w", hash, err)
+	}
+
+	mappedAddr := uintptr(unsafe.Pointer(&chunkContent[0]))
+	po.mappedChunks[hashKey] = mappedAddr
+
+	return mappedAddr, nil
+}
+
+func (po *PageOperations) mapChunkOld(hashKey [md5.Size]byte) (uintptr, error) {
+	// Chunk not found, need to mmap it
+	hash := hex.EncodeToString(hashKey[:])
 	po.snapMgr.DownloadChunk(hash)
 	chunkFileName := po.snapMgr.GetChunkFilePath(hash)
 	chunkFile, err := os.Open(chunkFileName)
