@@ -126,6 +126,11 @@ type UffdIoRange struct {
 	Len   uint64
 }
 
+type MappedChunkInfo struct {
+	addr			uintptr
+	chunkContent	[]byte
+}
+
 // PageOperations encapsulates the page-level operations for UFFD handling.
 // This structure is shared across multiple UFFD handlers to provide consistent
 // behavior without duplicating configuration.
@@ -135,13 +140,12 @@ type PageOperations struct {
 	workingSet         []uint64
 	firstPageFaultOnce *sync.Once
 	lazy               bool
-	mappedChunks       map[[md5.Size]byte]uintptr
-	mappedChunkContents       map[[md5.Size]byte][]byte
+	mappedChunks       map[[md5.Size]byte]MappedChunkInfo
 	snapMgr            *snapshotting.SnapshotManager
 }
 
 // NewPageOperations creates a new PageOperations instance
-func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint64, lazy bool, mappedChunks map[[md5.Size]byte]uintptr, snapMgr *snapshotting.SnapshotManager) *PageOperations {
+func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint64, lazy bool, mappedChunks map[[md5.Size]byte]MappedChunkInfo, snapMgr *snapshotting.SnapshotManager) *PageOperations {
 	return &PageOperations{
 		backingBuffer:      backingBuffer,
 		pageSize:           pageSize,
@@ -149,7 +153,6 @@ func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint
 		firstPageFaultOnce: &sync.Once{},
 		lazy:               lazy,
 		mappedChunks:       mappedChunks,
-		mappedChunkContents: make(map[[md5.Size]byte][]byte),
 		snapMgr:            snapMgr,
 	}
 }
@@ -383,8 +386,8 @@ func (po *PageOperations) insertWorkingSetOld(uffd int, region *GuestRegionUffdM
 
 func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	// Return already mapped chunk if exists
-	if addr, ok := po.mappedChunks[hashKey]; ok {
-		return addr, nil
+	if mapInfo, ok := po.mappedChunks[hashKey]; ok {
+		return mapInfo.addr, nil
 	}
 
 	hash := hex.EncodeToString(hashKey[:])
@@ -394,8 +397,10 @@ func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	}
 
 	mappedAddr := uintptr(unsafe.Pointer(&chunkContent[0]))
-	po.mappedChunks[hashKey] = mappedAddr
-	po.mappedChunkContents[hashKey] = chunkContent
+	po.mappedChunks[hashKey] = MappedChunkInfo{
+		addr: mappedAddr,
+		chunkContent: chunkContent,
+	}
 
 	return mappedAddr, nil
 }
@@ -424,7 +429,10 @@ func (po *PageOperations) mapChunkOld(hashKey [md5.Size]byte) (uintptr, error) {
 
 	chunkFile.Close()
 	mappedAddr := uintptr(unsafe.Pointer(&chunkMem[0]))
-	po.mappedChunks[hashKey] = mappedAddr
+	po.mappedChunks[hashKey] = MappedChunkInfo{
+		addr: mappedAddr,
+		chunkContent: nil,
+	}
 
 	return mappedAddr, nil
 }
@@ -734,13 +742,13 @@ func NewRuntime(conn *net.UnixConn, backingFile *os.File, wsFile *os.File, trace
 		return nil, fmt.Errorf("mmap on backing file failed: %w", err)
 	}
 
-	var mappedChunks map[[md5.Size]byte]uintptr
+	var mappedChunks map[[md5.Size]byte]MappedChunkInfo
 
 	ws := make([]uint64, 0)
 	if lazy {
 		// in case of lazy, the backing memory file is just a recipe file containing md5 hashes
 		backingMemorySize *= uint64(snapMgr.GetChunkSize()) / uint64(md5.Size)
-		mappedChunks = make(map[[md5.Size]byte]uintptr)
+		mappedChunks = make(map[[md5.Size]byte]MappedChunkInfo)
 	}
 
 	if wsFile != nil {
