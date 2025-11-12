@@ -380,7 +380,11 @@ func (po *PageOperations) insertWorkingSetOld(uffd int, region *GuestRegionUffdM
 }
 
 func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
-	// Chunk not found, need to mmap it
+	// Return already mapped chunk if exists
+	if addr, ok := po.mappedChunks[hashKey]; ok {
+		return addr, nil
+	}
+	
 	hash := hex.EncodeToString(hashKey[:])
 	chunkContent, err := po.snapMgr.DownloadAndReturnChunk(hash)
 	if err != nil {
