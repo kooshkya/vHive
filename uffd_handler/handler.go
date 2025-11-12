@@ -136,6 +136,7 @@ type PageOperations struct {
 	firstPageFaultOnce *sync.Once
 	lazy               bool
 	mappedChunks       map[[md5.Size]byte]uintptr
+	mappedChunkContents       map[[md5.Size]byte][]byte
 	snapMgr            *snapshotting.SnapshotManager
 }
 
@@ -148,6 +149,7 @@ func NewPageOperations(backingBuffer uintptr, pageSize uint64, workingSet []uint
 		firstPageFaultOnce: &sync.Once{},
 		lazy:               lazy,
 		mappedChunks:       mappedChunks,
+		mappedChunkContents: make(map[[md5.Size]byte][]byte),
 		snapMgr:            snapMgr,
 	}
 }
@@ -384,7 +386,7 @@ func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 	if addr, ok := po.mappedChunks[hashKey]; ok {
 		return addr, nil
 	}
-	
+
 	hash := hex.EncodeToString(hashKey[:])
 	chunkContent, err := po.snapMgr.DownloadAndReturnChunk(hash)
 	if err != nil {
@@ -393,6 +395,7 @@ func (po *PageOperations) mapChunk(hashKey [md5.Size]byte) (uintptr, error) {
 
 	mappedAddr := uintptr(unsafe.Pointer(&chunkContent[0]))
 	po.mappedChunks[hashKey] = mappedAddr
+	po.mappedChunkContents[hashKey] = chunkContent
 
 	return mappedAddr, nil
 }
