@@ -525,6 +525,7 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 }
 
 func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) {
+	startTime := time.Now()
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	// Return from in-memory registry if already downloaded
@@ -533,6 +534,7 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading cached chunk %s", hash)
 		}
+		log.Infof("DownloadAndReturnChunk: chunk was registered. finished in %v", time.Since(startTime))
 		return data, nil
 	}
 
@@ -565,13 +567,16 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 	// Mark as downloaded
 	mgr.RegisterChunk(hash)
 
+	log.Infof("DownloadAndReturnChunk: chunk was NOT registered. finished in %v", time.Since(startTime))
 	return data, nil
 }
 
 func (mgr *SnapshotManager) DownloadChunk(hash string) error {
+	startTime := time.Now()
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	if mgr.IsChunkRegistered(hash) {
+		log.Infof("DownloadChunk: chunk was registered. finished in %v", time.Since(startTime))
 		return nil // already downloaded
 	}
 
@@ -580,6 +585,7 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	}
 
 	mgr.RegisterChunk(hash)
+	log.Infof("DownloadChunk: chunk was NOT registered. finished in %v", time.Since(startTime))
 	return nil
 }
 
