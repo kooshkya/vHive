@@ -283,6 +283,65 @@ func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapp
 
 func (po *PageOperations) insertWorkingSetLazy(uffd int, region *GuestRegionUffdMapping) {
 	startTime := time.Now()
+	var counter int32
+
+	defer func() {
+		log.Infof("(Lazy Version) Pre-inserting working set of %d pages in %v", atomic.LoadInt32(&counter), time.Since(startTime))
+	}()
+
+	pfnCh := make(chan uint64, len(po.workingSet))
+	for _, pfn := range po.workingSet {
+		pageAddr := pfn * po.pageSize
+		if pageAddr >= region.Offset && pageAddr < region.Offset+region.Size {
+			pfnCh <- pfn
+		}
+	}
+	close(pfnCh)
+
+	numWorkers := 8	// TODO: tune this
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func() {
+			defer wg.Done()
+			for pfn := range pfnCh {
+				pageAddr := pfn * po.pageSize
+				atomic.AddInt32(&counter, 1)
+
+				recipeOffset := (pageAddr) / po.snapMgr.GetChunkSize() * md5.Size
+				hashBytes := (*[md5.Size]byte)(unsafe.Pointer(po.backingBuffer + uintptr(recipeOffset)))
+				var hashKey [md5.Size]byte
+				copy(hashKey[:], hashBytes[:])
+
+				mappedAddr, err := po.mapChunk(hashKey)
+				if err != nil {
+					log.Errorf("Failed to map chunk: %v", err)
+					continue
+				}
+
+				src := mappedAddr + (uintptr(pageAddr) % uintptr(po.snapMgr.GetChunkSize()))
+
+				copy := UffdIoCopy{
+					Dst:  pageAddr + region.BaseHostVirtAddr,
+					Src:  uint64(src),
+					Len:  po.pageSize,
+					Mode: UFFDIO_COPY_MODE_DONTWAKE,
+				}
+
+				_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(uffd), UFFDIO_COPY, uintptr(unsafe.Pointer(&copy)))
+				if errno != 0 && errno != unix.EAGAIN && errno != unix.EEXIST {
+					log.Errorf("UFFD copy failed: %v", errno)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func (po *PageOperations) insertWorkingSetLazyOld(uffd int, region *GuestRegionUffdMapping) {
+	startTime := time.Now()
 	counter := 0
 	defer func() {
 		log.Infof("(Lazy Version) Pre-inserting working set of %d pages in %v", counter, time.Since(startTime))
