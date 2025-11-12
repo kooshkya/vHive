@@ -218,8 +218,8 @@ func (po *PageOperations) PopulateFromFile(uffd int, region *GuestRegionUffdMapp
 
 func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapping) {
 	if po.lazy {
-		log.Infof("Lazy mode detected, resorting to old insertWorkingSet")
-		po.insertWorkingSetOld(uffd, region)
+		log.Infof("Lazy mode detected, going to insertWorkingSetLazy")
+		po.insertWorkingSetLazy(uffd, region)
 		return
 	}
 
@@ -273,6 +273,55 @@ func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapp
 	}
 
 	wg.Wait()
+}
+
+func (po *PageOperations) insertWorkingSetLazy(uffd int, region *GuestRegionUffdMapping) {
+	startTime := time.Now()
+	counter := 0
+	defer func() {
+		log.Infof("(Lazy Version) Pre-inserting working set of %d pages in %v", counter, time.Since(startTime))
+	}()
+
+	for _, pfn := range po.workingSet {
+		pageAddr := pfn * po.pageSize
+		if pageAddr >= region.Offset && pageAddr < region.Offset+region.Size {
+			counter++
+
+			// Read the MD5 hash from the recipe file
+			recipeOffset := (pageAddr) / po.snapMgr.GetChunkSize() * md5.Size
+			hashBytes := (*[md5.Size]byte)(unsafe.Pointer(po.backingBuffer + uintptr(recipeOffset)))
+			var hashKey [md5.Size]byte
+			copy(hashKey[:], hashBytes[:])
+			mappedAddr, err := po.mapChunk(hashKey)
+
+			if err != nil {
+				log.Errorf("Failed to map chunk: %v", err)
+				return
+			}
+
+			src := mappedAddr + (uintptr(pageAddr) % uintptr(po.snapMgr.GetChunkSize()))
+
+			copy := UffdIoCopy{
+				Dst:  pageAddr + region.BaseHostVirtAddr,
+				Src:  uint64(src),
+				Len:  po.pageSize,
+				Mode: UFFDIO_COPY_MODE_DONTWAKE,
+			}
+
+			_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(uffd), UFFDIO_COPY, uintptr(unsafe.Pointer(&copy)))
+			if errno != 0 {
+				if errno == unix.EAGAIN {
+					// A 'remove' event is blocking us
+					continue
+				}
+				if errno == unix.EEXIST {
+					// Page already exists, this is ok
+					continue
+				}
+				log.Errorf("UFFD copy failed: %v", errno)
+			}
+		}
+	}
 }
 
 // Old version, keeping for benchmarking purposes. Should delete later if changes are accepted
