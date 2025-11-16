@@ -693,6 +693,8 @@ func NewRuntime(conn *net.UnixConn, backingFile *os.File, wsFile *os.File, trace
 
 // Run runs the main event loop
 func (r *Runtime) Run(pfEventDispatch func(*UffdHandler)) {
+	startTime := time.Now()
+
 	pollfds := []unix.PollFd{
 		{
 			Fd:     int32(r.streamFd),
@@ -713,6 +715,8 @@ func (r *Runtime) Run(pfEventDispatch func(*UffdHandler)) {
 			if pollfds[i].Revents&unix.POLLIN != 0 {
 				nready--
 				if pollfds[i].Fd == int32(r.streamFd) {
+					log.Infof("request for new uffd handler arrived after %v", time.Since(startTime))
+					requestStartTime := time.Now()
 					// Handle new uffd from stream
 					handler, err := NewUffdHandler(r.stream, r.pageOps, r.backingMemorySize, r.tracer)
 					log.Debugf("Created new UFFD handler: %v", handler)
@@ -729,6 +733,7 @@ func (r *Runtime) Run(pfEventDispatch func(*UffdHandler)) {
 						Events: unix.POLLIN,
 					})
 					r.uffds[handler.uffd] = handler
+					log.Infof("Processed request for new uffd handler after %v", time.Since(requestStartTime))
 				} else {
 					// Handle one of uffd page faults
 					fd := int(pollfds[i].Fd)
@@ -804,6 +809,7 @@ func tryGetMappingsAndFile(conn *net.UnixConn) (string, int, error) {
 }
 
 func StartUffdHandler(uffdSockPath string, memFilePath string, traceFilePath string, wsFilePath string, lazy bool, snapMgr *snapshotting.SnapshotManager) error {
+	startTime := time.Now()
 	log.Debugf("Starting handler")
 
 	// Open the memory file
@@ -857,6 +863,8 @@ func StartUffdHandler(uffdSockPath string, memFilePath string, traceFilePath str
 	if err != nil {
 		return fmt.Errorf("failed to create runtime: %w", err)
 	}
+
+	log.Infof("uffd handler's runtime.Run being called after %v", time.Since(startTime))
 
 	// Run the page fault handler
 	runtime.Run(func(uffdHandler *UffdHandler) {
