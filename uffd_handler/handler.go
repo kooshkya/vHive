@@ -702,6 +702,7 @@ func (r *Runtime) Run(pfEventDispatch func(*UffdHandler)) {
 		},
 	}
 
+	seen := make(map[int]bool)
 	for {
 		nready, err := unix.Poll(pollfds, -1)
 		if err != nil {
@@ -733,11 +734,16 @@ func (r *Runtime) Run(pfEventDispatch func(*UffdHandler)) {
 						Events: unix.POLLIN,
 					})
 					r.uffds[handler.uffd] = handler
-					log.Infof("Processed request for new uffd handler after %v", time.Since(requestStartTime))
+					log.Infof("Processed request for new uffd handler after %v and created uffd %d", time.Since(requestStartTime), handler.uffd)
 				} else {
 					// Handle one of uffd page faults
 					fd := int(pollfds[i].Fd)
 					if handler, ok := r.uffds[fd]; ok {
+						if !seen[fd] {
+							log.Infof("First page fault event for UFFD fd %d after %v",
+								fd, time.Since(startTime))
+							seen[fd] = true
+						}
 						pfEventDispatch(handler)
 					}
 				}
