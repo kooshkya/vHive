@@ -770,17 +770,26 @@ func (mgr *SnapshotManager) downloadWorkingSet(snap *Snapshot) error {
 	return nil
 }
 
-// SnapshotExistsComplete checks if all required snapshot files exist in remote storage
+// SnapshotExists checks if all required snapshot files exist in remote storage
 func (mgr *SnapshotManager) SnapshotExists(revision string) (bool, error) {
+	log.Infof("[SnapshotExists] Checking snapshot existence for revision=%s", revision)
+
 	// Create a temporary snapshot to get the expected file names
+	log.Infof("[SnapshotExists] Initializing temporary snapshot for revision=%s", revision)
 	snap, err := mgr.InitSnapshot(revision, "")
 	if err != nil {
+		log.Errorf("[SnapshotExists] Failed to init snapshot for revision=%s: %v", revision, err)
 		return false, errors.Wrapf(err, "initializing snapshot for existence check")
 	}
+	log.Infof("[SnapshotExists] Temporary snapshot initialized for revision=%s", revision)
 
 	defer func() {
-		// Clean up the temporary snapshot
-		_ = mgr.DeleteSnapshot(revision)
+		log.Infof("[SnapshotExists] Cleaning up temporary snapshot for revision=%s", revision)
+		if delErr := mgr.DeleteSnapshot(revision); delErr != nil {
+			log.Errorf("[SnapshotExists] Failed to delete temporary snapshot for revision=%s: %v", revision, delErr)
+		} else {
+			log.Infof("[SnapshotExists] Temporary snapshot deleted for revision=%s", revision)
+		}
 	}()
 
 	requiredFiles := []string{
@@ -788,20 +797,33 @@ func (mgr *SnapshotManager) SnapshotExists(revision string) (bool, error) {
 		filepath.Base(snap.GetInfoFilePath()),
 	}
 
+	log.Infof("[SnapshotExists] Required files for revision=%s: %v", revision, requiredFiles)
+
 	// Check each file exists
 	for _, fileName := range requiredFiles {
 		objectKey := mgr.getObjectKey(revision, fileName)
+		log.Infof("[SnapshotExists] Checking existence of object key=%s", objectKey)
+
 		exists, err := mgr.storage.Exists(objectKey)
 		if err != nil {
+			log.Errorf("[SnapshotExists] Error checking file=%s for revision=%s: %v",
+				fileName, revision, err)
 			return false, errors.Wrapf(err, "checking if file %s exists for snapshot %s", fileName, revision)
 		}
+
 		if !exists {
-			return false, nil // At least one required file is missing
+			log.Warnf("[SnapshotExists] File missing: %s (objectKey=%s) for revision=%s",
+				fileName, objectKey, revision)
+			return false, nil
 		}
+
+		log.Infof("[SnapshotExists] File present: %s (objectKey=%s)", fileName, objectKey)
 	}
 
+	log.Infof("[SnapshotExists] All required snapshot files exist for revision=%s", revision)
 	return true, nil
 }
+
 
 // Helper function to construct object keys (you may need to adjust this based on your key structure)
 func (mgr *SnapshotManager) getObjectKey(revision, fileName string) string {
