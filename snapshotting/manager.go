@@ -775,23 +775,7 @@ func (mgr *SnapshotManager) SnapshotExists(revision string) (bool, error) {
 	log.Infof("[SnapshotExists] Checking snapshot existence for revision=%s", revision)
 
 	// Create a temporary snapshot to get the expected file names
-	log.Infof("[SnapshotExists] Initializing temporary snapshot for revision=%s", revision)
-	snap, err := mgr.InitSnapshot(revision, "")
-	if err != nil {
-		log.Errorf("[SnapshotExists] Failed to init snapshot for revision=%s: %v", revision, err)
-		return false, errors.Wrapf(err, "initializing snapshot for existence check")
-	}
-	log.Infof("[SnapshotExists] Temporary snapshot initialized for revision=%s", revision)
-
-	defer func() {
-		log.Infof("[SnapshotExists] Cleaning up temporary snapshot for revision=%s", revision)
-		if delErr := mgr.DeleteSnapshot(revision); delErr != nil {
-			log.Errorf("[SnapshotExists] Failed to delete temporary snapshot for revision=%s: %v", revision, delErr)
-		} else {
-			log.Infof("[SnapshotExists] Temporary snapshot deleted for revision=%s", revision)
-		}
-	}()
-
+	snap := NewSnapshot(revision, mgr.baseFolder, "")
 	requiredFiles := []string{
 		filepath.Base(snap.GetSnapshotFilePath()),
 		filepath.Base(snap.GetInfoFilePath()),
