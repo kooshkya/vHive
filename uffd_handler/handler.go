@@ -593,6 +593,7 @@ type Runtime struct {
 	stream            *net.UnixConn
 	backingFile       *os.File
 	backingMemory     uintptr
+	backingMemoryBytes	[]byte
 	backingMemorySize uint64
 	uffds             map[int]*UffdHandler
 	streamFd          int
@@ -661,6 +662,7 @@ func NewRuntime(conn *net.UnixConn, backingFile *os.File, wsFile *os.File, trace
 		stream:            conn,
 		backingFile:       backingFile,
 		backingMemory:     backingMemoryPtr,
+		backingMemoryBytes: backingMemory,
 		backingMemorySize: backingMemorySize,
 		uffds:             make(map[int]*UffdHandler),
 		streamFd:          -1,
@@ -758,6 +760,13 @@ func (r *Runtime) Run(pfEventDispatch func(*UffdHandler)) {
 			}
 		}
 		pollfds = newPollfds
+	}
+}
+
+func (r *Runtime) FreeBackingFile() {
+	err := unix.Munmap(r.backingMemoryBytes)
+	if err != nil {
+		log.Fatalf("Failed to unmap memory: %v", err)
 	}
 }
 
@@ -928,5 +937,7 @@ func StartUffdHandler(uffdSockPath string, memFilePath string, traceFilePath str
 			}
 		}
 	})
+	
+	runtime.FreeBackingFile()
 	return nil
 }
