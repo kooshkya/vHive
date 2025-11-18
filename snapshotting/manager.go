@@ -55,17 +55,74 @@ func (mgr *SnapshotManager) GetChunkSize() uint64 {
 
 type ChunkEntry struct {
 	hash	string
-	hitTimes	[]time.Time
-	element		list.Element
+	accessTimes	[]time.Time
+	element		*list.Element
+	containingList	*list.List
 }
 
 type ChunkRegistry struct {
 	chunkLocks       sync.Map
+	snpMgr	*SnapshotManager
 	K        int
 	capacity int
-	hotList  *list.List
+	hotList  *list.List		// TODO: possibly change to heap implementation
 	coldList *list.List
 	items    map[string]*ChunkEntry
+}
+
+func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
+	if K <= 1 {
+		K = 2
+	}
+
+	if capacity <= 1 {
+		capacity = 2
+	}
+
+	return &ChunkRegistry{
+		snpMgr: snpMgr,
+		K:        3,	// TODO: tune
+		capacity: 100,	// TODO: tune
+		hotList:  list.New(),
+		coldList: list.New(),
+		items:    make(map[string]*ChunkEntry),
+	}
+}
+
+// AddAccess assumes:
+//   - caller holds the per-chunk lock
+func (cr *ChunkRegistry) AddAccess(hash string) error {
+	// TODO: add safety check to make sure lock for chunk is held
+
+    now := time.Now()
+	entry, ok := cr.items[hash]
+	if !ok {
+		entry = &ChunkEntry{
+			hash: hash,
+			accessTimes: []time.Time{now},
+
+			element: nil,
+			containingList: cr.coldList,
+		}
+		cr.items[hash] = entry
+		entry.element = cr.coldList.PushFront(entry)
+		// TODO: cr.check_capacity()
+	} else {
+		entry.accessTimes = append(entry.accessTimes, now)
+		if len(entry.accessTimes) == cr.K {
+			cr.coldList.Remove(entry.element)
+			cr.hotList.PushFront(entry.element)
+		} else if len(entry.accessTimes) < cr.K {
+			cr.coldList.MoveToFront(entry.element)
+		}
+	}
+
+	return nil
+}
+
+func (cr *ChunkRegistry) CorrectLength() error {
+	// TODO: Implement
+	return nil
 }
 
 // SnapshotManager manages snapshots stored on the node.
@@ -85,27 +142,18 @@ type SnapshotManager struct {
 	storage storage.ObjectStorage
 }
 
-func NewChunkRegistry(K, capacity int) *ChunkRegistry {
-	return &ChunkRegistry{
-		K:        3,	// TODO: tune
-		capacity: 100,	// TODO: tune
-		hotList:  list.New(),
-		coldList: list.New(),
-		items:    make(map[string]*ChunkEntry),
-	}
-}
-
 func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking, skipCleanup, lazy, wsPulling bool, chunkSize uint64) *SnapshotManager {
 	manager := &SnapshotManager{
 		snapshots:     make(map[string]*Snapshot),
 		baseFolder:    baseFolder,
 		chunking:      chunking,
-		chunkRegistry: NewChunkRegistry(K, capacity),	// TODO: tune params
+		chunkRegistry: nil,	// TODO: tune params
 		chunkSize:     chunkSize,
 		storage:       store,
 		wsPulling:     wsPulling,
 		lazy:          lazy,
 	}
+	manager.chunkRegistry = NewChunkRegistry(manager, K, capacity)
 
 	// Clean & init basefolder unless skipping is requested
 	if !skipCleanup {
@@ -269,7 +317,7 @@ func (mgr *SnapshotManager) CleanChunks() error {
 	}
 	os.RemoveAll(filepath.Join(mgr.baseFolder, chunkPrefix))
 	os.MkdirAll(filepath.Join(mgr.baseFolder, chunkPrefix), os.ModePerm)
-	mgr.chunkRegistry = NewChunkRegistry(K, capacity)
+	mgr.chunkRegistry = NewChunkRegistry(mgr, K, capacity)
 	return nil
 }
 
@@ -656,8 +704,9 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 	if _, err := outFile.Write(data); err != nil {
 		return nil, errors.Wrapf(err, "writing chunk %s", hash)
 	}
+
 	// Mark as downloaded
-	mgr.RegisterChunk(hash)
+	mgr.chunkRegistry.AddAccess(hash)
 
 	return data, nil
 }
@@ -672,17 +721,17 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	
 	defer lock.Unlock()
 
-	chunkFilePath := mgr.GetChunkFilePath(hash)
-
 	if _, ok := mgr.chunkRegistry.items[hash]; ok {
+		// TODO: add a hit time to this
 		return nil // already downloaded
 	}
+	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	if err := mgr.downloadFile(chunkPrefix, chunkFilePath, hash); err != nil {
 		return err
 	}
 
-	mgr.RegisterChunk(hash)
+	mgr.chunkRegistry.AddAccess(hash)
 	return nil
 }
 
