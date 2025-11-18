@@ -23,10 +23,13 @@
 package snapshotting
 
 import (
+	"container/list"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
+	"list"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,10 +45,27 @@ import (
 
 const (
 	chunkPrefix = "_chunks"
+	K = 3 		// TODO: tune
+	capacity = 100	// TODO: tune
 )
 
 func (mgr *SnapshotManager) GetChunkSize() uint64 {
 	return mgr.chunkSize
+}
+
+type ChunkEntry struct {
+	hash	string
+	hitTimes	[]time.Time
+	element		list.Element
+}
+
+type ChunkRegistry struct {
+	chunkLocks       sync.Map
+	K        int
+	capacity int
+	hotList  *list.List
+	coldList *list.List
+	items    map[string]*ChunkEntry
 }
 
 // SnapshotManager manages snapshots stored on the node.
@@ -56,7 +76,7 @@ type SnapshotManager struct {
 	snapshots     map[string]*Snapshot
 	baseFolder    string
 	chunking      bool
-	chunkRegistry sync.Map
+	chunkRegistry	*ChunkRegistry
 	lazy          bool
 	wsPulling     bool
 	chunkSize     uint64
@@ -65,12 +85,22 @@ type SnapshotManager struct {
 	storage storage.ObjectStorage
 }
 
+func NewChunkRegistry(K, capacity int) *ChunkRegistry {
+	return &ChunkRegistry{
+		K:        3,	// TODO: tune
+		capacity: 100,	// TODO: tune
+		hotList:  list.New(),
+		coldList: list.New(),
+		items:    make(map[string]*ChunkEntry),
+	}
+}
+
 func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking, skipCleanup, lazy, wsPulling bool, chunkSize uint64) *SnapshotManager {
 	manager := &SnapshotManager{
 		snapshots:     make(map[string]*Snapshot),
 		baseFolder:    baseFolder,
 		chunking:      chunking,
-		chunkRegistry: sync.Map{},
+		chunkRegistry: NewChunkRegistry(K, capacity),	// TODO: tune params
 		chunkSize:     chunkSize,
 		storage:       store,
 		wsPulling:     wsPulling,
@@ -239,7 +269,7 @@ func (mgr *SnapshotManager) CleanChunks() error {
 	}
 	os.RemoveAll(filepath.Join(mgr.baseFolder, chunkPrefix))
 	os.MkdirAll(filepath.Join(mgr.baseFolder, chunkPrefix), os.ModePerm)
-	mgr.chunkRegistry = sync.Map{}
+	mgr.chunkRegistry = NewChunkRegistry(K, capacity)
 	return nil
 }
 
@@ -580,10 +610,19 @@ func (mgr *SnapshotManager) downloadMemFile(snap *Snapshot) error {
 }
 
 func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) {
+	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
+	lock := lockI.(*sync.Mutex)
+
+	start := time.Now()
+	lock.Lock()
+	log.Debugf("DownloadAndReturnChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+
+	defer lock.Unlock()
+
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	// Return from in-memory registry if already downloaded
-	if mgr.IsChunkRegistered(hash) {
+	if _, ok := mgr.chunkRegistry.items[hash]; ok {
 		data, err := os.ReadFile(chunkFilePath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading cached chunk %s", hash)
@@ -624,9 +663,18 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 }
 
 func (mgr *SnapshotManager) DownloadChunk(hash string) error {
+	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
+	lock := lockI.(*sync.Mutex)
+
+	start := time.Now()
+	lock.Lock()
+	log.Debugf("DownloadChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	
+	defer lock.Unlock()
+
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
-	if mgr.IsChunkRegistered(hash) {
+	if _, ok := mgr.chunkRegistry.items[hash]; ok {
 		return nil // already downloaded
 	}
 
@@ -635,6 +683,36 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	}
 
 	mgr.RegisterChunk(hash)
+	return nil
+}
+
+// removes the chunk from local disk
+func (mgr *SnapshotManager) RemoveChunk(hash string) error {
+	// TODO: finish logic
+	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
+	lock := lockI.(*sync.Mutex)
+
+	start := time.Now()
+	lock.Lock()
+	log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	
+	defer lock.Unlock()
+
+	chunkFilePath := mgr.GetChunkFilePath(hash)
+
+	// Check if file exists
+	if _, err := os.Stat(chunkFilePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("chunk %s does not exist at %s", hash, chunkFilePath)
+		}
+		return fmt.Errorf("failed to stat chunk %s: %w", hash, err)
+	}
+
+	// Remove the file
+	if err := os.Remove(chunkFilePath); err != nil {
+		return fmt.Errorf("failed to remove chunk %s: %w", hash, err)
+	}
+	
 	return nil
 }
 
