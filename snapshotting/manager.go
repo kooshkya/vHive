@@ -149,13 +149,9 @@ func (cr *ChunkRegistry) getHotLRU() *list.Element {
 }
 
 func (cr *ChunkRegistry) GetLength() int {
-	count := 0
-	cr.items.Range(func(key, value any) bool {
-		count++
-		return true
-	})
-	return count
-
+	cr.registryLock.Lock()
+	defer cr.registryLock.Unlock()
+	return len(cr.coldList) + len(cr.hotList)
 }
 
 // deletes extra chunks. returns number of chunks deleted. assumes registryLock and also chunk lock for latestChunkHash is held by caller
