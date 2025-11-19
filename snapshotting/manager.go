@@ -187,9 +187,8 @@ func (cr *ChunkRegistry) getHotLRU() *list.Element {
 	return max
 }
 
+// assumes registryLock is held
 func (cr *ChunkRegistry) GetLength() int {
-	cr.registryLock.Lock()
-	defer cr.registryLock.Unlock()
 	return len(cr.coldList) + len(cr.hotList)
 }
 
@@ -378,8 +377,15 @@ func (mgr *SnapshotManager) DeleteSnapshot(revision string) error {
 }
 
 func (mgr *SnapshotManager) CleanChunks() error {
+	if !mgr.chunking {
+		return nil
+	}
+	
 	mgr.Lock()
 	defer mgr.Unlock()
+	
+	mgr.chunkRegistry.registryLock.Lock()
+	defer mgr.chunkRegistry.registryLock.Unlock()
 	
 	for hash, entry := range mgr.chunkRegistry.items {
 		lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
@@ -388,9 +394,6 @@ func (mgr *SnapshotManager) CleanChunks() error {
 		defer lock.Unlock()
 	}
 
-	if !mgr.chunking {
-		return nil
-	}
 	os.RemoveAll(filepath.Join(mgr.baseFolder, chunkPrefix))
 	os.MkdirAll(filepath.Join(mgr.baseFolder, chunkPrefix), os.ModePerm)
 	mgr.chunkRegistry = NewChunkRegistry(mgr, K, capacity)
