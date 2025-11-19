@@ -79,11 +79,8 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 	}
 }
 
-// assumes caller holds lock for hash, does NOT remove chunk from disk
+// assumes caller holds lock for hash and the registryLock, does NOT remove chunk from disk
 func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
-	cr.registryLock.Lock()
-	defer cr.registryLock.Unlock()
-
 	entry, ok := cr.items.Load(hash)
 	if ok {
 		if entry.containingList.Remove(entry.element) == nil {
