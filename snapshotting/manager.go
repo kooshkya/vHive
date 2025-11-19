@@ -745,7 +745,7 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	// Return from in-memory registry if already downloaded
-	if _, ok := mgr.chunkRegistry.ChunkExists(hash) {
+	if mgr.chunkRegistry.ChunkExists(hash) {
 		data, err := os.ReadFile(chunkFilePath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading cached chunk %s", hash)
