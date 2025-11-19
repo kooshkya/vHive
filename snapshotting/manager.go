@@ -171,7 +171,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 		} else if coldLRU == nil {
 			to_remove = hotLRU.hash
 		} else {
-			if coldLRU.accessTimes[0] < hotLRU.accessTimes[K - 1] {
+			if coldLRU.accessTimes[len(coldLRU.accessTimes) - 1] < hotLRU.accessTimes[len(hotLRU) - K] {
 				to_remove = coldLRU.hash
 			} else {
 				to_remove = hotLRU.hash
