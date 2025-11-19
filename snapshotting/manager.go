@@ -61,6 +61,7 @@ type ChunkEntry struct {
 }
 
 type ChunkRegistry struct {
+	registryLock	sync.Mutex
 	chunkLocks       sync.Map
 	snpMgr	*SnapshotManager
 	K        int
@@ -71,21 +72,29 @@ type ChunkRegistry struct {
 }
 
 func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
-	if K <= 1 {
-		K = 2
-	}
-
-	if capacity <= 1 {
-		capacity = 2
-	}
-
 	return &ChunkRegistry{
 		snpMgr: snpMgr,
-		K:        3,	// TODO: tune
-		capacity: 100,	// TODO: tune
+		K:        K,	// TODO: tune
+		capacity: capacity,	// TODO: tune
 		hotList:  list.New(),
 		coldList: list.New(),
 		items:    make(map[string]*ChunkEntry),
+	}
+}
+
+// assumes caller holds lock for hash, does NOT remove chunk from disk
+func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
+	cr.registryLock.Lock()
+	defer cr.registryLock.Unlock()
+	
+	entry, ok := cr.items[hash]
+	if ok {
+		if entry.containingList.Remove(entry.element) == nil {
+			return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in hotList against expectation", hash))	
+		}
+		delete(cr.items, hash)
+	} else {
+		return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in registry", hash))
 	}
 }
 
@@ -93,6 +102,9 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 //   - caller holds the per-chunk lock
 func (cr *ChunkRegistry) AddAccess(hash string) error {
 	// TODO: add safety check to make sure lock for chunk is held
+	
+	cr.registryLock.Lock()
+	defer cr.registryLock.Unlock()
 
     now := time.Now()
 	entry, ok := cr.items[hash]
@@ -106,23 +118,82 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		}
 		cr.items[hash] = entry
 		entry.element = cr.coldList.PushFront(entry)
-		// TODO: cr.check_capacity()
+		_, err := cr.correctLength(hash)
+		return err
 	} else {
 		entry.accessTimes = append(entry.accessTimes, now)
-		if len(entry.accessTimes) == cr.K {
-			cr.coldList.Remove(entry.element)
-			cr.hotList.PushFront(entry.element)
-		} else if len(entry.accessTimes) < cr.K {
-			cr.coldList.MoveToFront(entry.element)
-		}
+
+		if entry.containingList == cr.coldList {
+			if len(entry.accessTimes) == cr.K {
+				cr.coldList.Remove(entry.element)
+				cr.hotList.PushFront(entry.element)
+				entry.containingList = cr.hotList
+			} else if len(entry.accessTimes) < cr.K {
+				cr.coldList.MoveToFront(entry.element)
+			} else {
+				return errors.New("chunk %s is on cold list but has K or more accesses!", hash)
+			}
+		} 
 	}
 
 	return nil
 }
 
-func (cr *ChunkRegistry) CorrectLength() error {
-	// TODO: Implement
-	return nil
+func (cr *ChunkRegistry) getHotLRU() *list.Element {
+	max := nil
+	for e := cr.hotList.Front(); e != nil; e = e.Next() {
+		if max == nil || e.Value.(*ChunkEntry).accessTimes[K - 1] < max.Value.(*ChunkEntry).accessTimes[K - 1] {
+			max = e
+		}
+	}
+	return max
+}
+
+// deletes extra chunks. returns number of chunks deleted. assumes lock for latestChunkHash is held by caller
+func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
+	cr.registryLock.Lock()	// can't have multiple processes calling this simultaneously
+	defer cr.registryLock.Unlock()
+
+	count := 0
+
+	for len(cr.items) > cr.capacity {
+		hotLRU, coldLRU := nil
+		
+		if cr.hotList.Len() > 0 {
+			hotLRU = cr.getHotLRU().Value.(*ChunkEntry)
+		}
+		if cr.coldList.Len() > 0 {
+			coldLRU = cr.coldList.Back().Value.(*ChunkEntry)
+		}
+
+		to_remove := ""
+		if hotLRU == nil {
+			to_remove = coldLRU.hash
+		} else if coldLRU == nil {
+			to_remove = hotLRU.hash
+		} else {
+			if coldLRU.accessTimes[0] < hotLRU.accessTimes[K - 1] {
+				to_remove = coldLRU.hash
+			} else {
+				to_remove = hotLRU.hash
+			}
+		}
+
+		if to_remove != latestChunkHash {
+			cr.snpMgr.RemoveChunk(to_remove)
+			count += 1
+		} else {
+			return count, errors.New("correctLength: Would have deadlocked on removal of %s", to_remove)
+		}
+	}
+
+	return count, nil
+}
+
+// should only be called while holding the chunk's lock
+func (cr *ChunkRegistry) ChunkExists(hash string) bool {
+	_, ok := cr.items[hash]
+	return ok
 }
 
 // SnapshotManager manages snapshots stored on the node.
@@ -361,17 +432,6 @@ func (mgr *SnapshotManager) UploadWSFile(revision string) error {
 	return nil
 }
 
-// Check if a chunk exists
-func (mgr *SnapshotManager) IsChunkRegistered(hash string) bool {
-	_, ok := mgr.chunkRegistry.Load(hash)
-	return ok
-}
-
-// Add a chunk to the registry
-func (mgr *SnapshotManager) RegisterChunk(hash string) {
-	mgr.chunkRegistry.Store(hash, true)
-}
-
 func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	startTime := time.Now()
 
@@ -404,15 +464,24 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
+				lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(job.hash, &sync.Mutex{})
+				lock := lockI.(*sync.Mutex)
+
+				start := time.Now()
+				lock.Lock()
+				log.Debugf("uploadMemFile: Acquired lock for chunk %s in %v", job.hash, time.Since(start))
+				
+				if _, ok := mgr.chunkRegistry.items[job.hash]; ok {
+					lock.Unlock()
+					continue
+				}
+				
 				if found, err := mgr.storage.Exists(mgr.getObjectKey(chunkPrefix, job.hash)); err == nil && found {
+					lock.Unlock()
 					continue
 				}
+				
 				chunkFilePath := mgr.GetChunkFilePath(job.hash)
-
-				if mgr.IsChunkRegistered(job.hash) {
-					continue
-				}
-
 				dir := filepath.Dir(chunkFilePath)
 				if _, err := os.Stat(dir); os.IsNotExist(err) {
 					os.MkdirAll(dir, os.ModePerm)
@@ -421,22 +490,26 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 				chunkFile, err := os.Create(chunkFilePath)
 				if err != nil {
 					errCh <- fmt.Errorf("creating chunk %s: %w", chunkFilePath, err)
+					lock.Unlock()
 					break
 				}
 
 				if _, err := chunkFile.Write(job.data); err != nil {
 					chunkFile.Close()
 					errCh <- fmt.Errorf("writing chunk %d: %w", job.idx, err)
+					lock.Unlock()
 					break
 				}
 				chunkFile.Close()
 
 				if err := mgr.uploadFile(chunkPrefix, chunkFilePath); err != nil {
 					errCh <- fmt.Errorf("uploading chunk %d: %w", job.idx, err)
+					lock.Unlock()	
 					continue
 				}
 
-				mgr.RegisterChunk(job.hash)
+				mgr.chunkRegistry.AddAccess(job.hash)
+				lock.Unlock()
 			}
 		}()
 	}
@@ -670,7 +743,7 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	// Return from in-memory registry if already downloaded
-	if _, ok := mgr.chunkRegistry.items[hash]; ok {
+	if _, ok := mgr.chunkRegistry.ChunkExists(hash) {
 		data, err := os.ReadFile(chunkFilePath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading cached chunk %s", hash)
@@ -721,8 +794,8 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	
 	defer lock.Unlock()
 
-	if _, ok := mgr.chunkRegistry.items[hash]; ok {
-		// TODO: add a hit time to this
+	if _, ok := mgr.chunkRegistry.ChunkExists(hash){
+		mgr.chunkRegistry.AddAccess(hash)
 		return nil // already downloaded
 	}
 	chunkFilePath := mgr.GetChunkFilePath(hash)
@@ -761,6 +834,8 @@ func (mgr *SnapshotManager) RemoveChunk(hash string) error {
 	if err := os.Remove(chunkFilePath); err != nil {
 		return fmt.Errorf("failed to remove chunk %s: %w", hash, err)
 	}
+
+	mgr.chunkRegistry.UnregisterChunk(hash)
 	
 	return nil
 }
