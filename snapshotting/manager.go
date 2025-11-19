@@ -72,8 +72,8 @@ type ChunkRegistry struct {
 func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 	return &ChunkRegistry{
 		snpMgr: snpMgr,
-		K:        K,	// TODO: tune
-		capacity: capacity,	// TODO: tune
+		K:        K,
+		capacity: capacity,
 		hotList:  list.New(),
 		coldList: list.New(),
 	}
