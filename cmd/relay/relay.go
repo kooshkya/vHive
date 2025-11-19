@@ -43,8 +43,9 @@ var (
 func handler(w http.ResponseWriter, r *http.Request) {
 	log.Debugf("request received, image %s, revision %s", r.Header.Get("image"), r.Header.Get("revision"))
 
-	// ctx, cancel := context.WithCancel(context.Background())
 	ctx := context.Background()
+	relayCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	image := r.Header.Get("image")
 	if mapped, ok := imageMap[image]; ok {
 		image = mapped
@@ -52,6 +53,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	rev := r.Header.Get("revision")
 	if rev == "" {
 		rev = "default"
+	} else {
+		rev = strings.Join(strings.Split(rev, "-")[:len(strings.Split(rev, "-"))-2], "-") // remove the unique suffix added by Knative
 	}
 	env := r.Header.Get("env")
 	envArr := []string{}
@@ -110,10 +113,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Debugf("Relay args: %s", relayArgs)
 
 		go func() {
-			exec.CommandContext(r.Context(), homeDir+"/vswarm/tools/relay/server", strings.Split(relayArgs, " ")...).Run()
+			exec.CommandContext(relayCtx, homeDir+"/vswarm/tools/relay/server", strings.Split(relayArgs, " ")...).Run()
 		}()
 
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	log.Debugf("Sending invocation to %s", vmId)
@@ -138,8 +141,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			orch.CreateSnapshot(ctx, vmId, snap)
 			snapMgr.CommitSnapshot(rev)
 			snapMgr.UploadSnapshot(rev)
-			snapMgr.DeleteSnapshot(rev)
-			snapMgr.CleanChunks()
+			// snapMgr.DeleteSnapshot(rev)
+			// snapMgr.CleanChunks()
 			log.Debugf("finished snapshotting %s", vmId)
 		}
 		orch.StopSingleVM(ctx, vmId)
