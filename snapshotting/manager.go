@@ -380,6 +380,13 @@ func (mgr *SnapshotManager) DeleteSnapshot(revision string) error {
 func (mgr *SnapshotManager) CleanChunks() error {
 	mgr.Lock()
 	defer mgr.Unlock()
+	
+	for hash, entry := range mgr.chunkRegistry.items {
+		lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
+		lock := lockI.(*sync.Mutex)
+		lock.Lock()
+		defer lock.Unlock()
+	}
 
 	if !mgr.chunking {
 		return nil
