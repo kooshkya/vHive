@@ -102,7 +102,7 @@ func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
 func (cr *ChunkRegistry) AddAccess(hash string) error {
 	// TODO: add safety check to make sure lock for chunk is held
 	
-	cr.registryLock.Lock()
+	cr.registryLock.Lock()	// have to lock because we write to list.Lists (not concurrency-safe.) also need for correctLength.
 	defer cr.registryLock.Unlock()
 
     now := time.Now()
@@ -158,11 +158,8 @@ func (cr *ChunkRegistry) GetLength() int {
 
 }
 
-// deletes extra chunks. returns number of chunks deleted. assumes lock for latestChunkHash is held by caller
+// deletes extra chunks. returns number of chunks deleted. assumes registryLock and also chunk lock for latestChunkHash is held by caller
 func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
-	cr.registryLock.Lock()	// can't have multiple processes calling this simultaneously
-	defer cr.registryLock.Unlock()
-
 	count := 0
 
 	for cr.GetLength() > cr.capacity {
@@ -824,6 +821,7 @@ func (mgr *SnapshotManager) RemoveChunk(hash string) error {
 	lock := lockI.(*sync.Mutex)
 
 	start := time.Now()
+	log.Debugf("RemoveChunk: Trying to acquire lock for chunk %s", hash)
 	lock.Lock()
 	log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
 	
