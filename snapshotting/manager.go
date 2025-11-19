@@ -79,24 +79,15 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 	}
 }
 
-// assumes caller holds lock for hash and the registryLock, does NOT remove chunk from disk
-func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
-	entry, ok := cr.items.Load(hash)
-	if ok {
-		if entry.containingList.Remove(entry.element) == nil {
-			return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in hotList against expectation", hash))	
-		}
-		cr.items.Delete(hash)
-	} else {
-		return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in registry", hash))
-	}
+// should only be called while holding the chunk's lock, otherwise might return true while chunk is being deleted
+func (cr *ChunkRegistry) ChunkExists(hash string) bool {
+	_, ok := cr.items.Load(hash)
+	return ok
 }
 
 // AddAccess assumes:
 //   - caller holds the per-chunk lock
 func (cr *ChunkRegistry) AddAccess(hash string) error {
-	// TODO: add safety check to make sure lock for chunk is held
-	
 	cr.registryLock.Lock()	// have to lock because we write to list.Lists (not concurrency-safe.) also need for correctLength.
 	defer cr.registryLock.Unlock()
 
@@ -131,24 +122,6 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 	}
 
 	return nil
-}
-
-func (cr *ChunkRegistry) getHotLRU() *list.Element {
-	max := nil
-	for e := cr.hotList.Front(); e != nil; e = e.Next() {
-		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
-		maxAccessTimes := max.Value.(*ChunkEntry).accessTimes
-		if max == nil || eAccessTimes[len(eAccessTimes) - K] < maxAccessTimes[len(maxAccessTimes) - K] {
-			max = e
-		}
-	}
-	return max
-}
-
-func (cr *ChunkRegistry) GetLength() int {
-	cr.registryLock.Lock()
-	defer cr.registryLock.Unlock()
-	return len(cr.coldList) + len(cr.hotList)
 }
 
 // deletes extra chunks. returns number of chunks deleted. assumes registryLock and also chunk lock for latestChunkHash is held by caller
@@ -189,11 +162,37 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 	return count, nil
 }
 
-// should only be called while holding the chunk's lock
-func (cr *ChunkRegistry) ChunkExists(hash string) bool {
-	_, ok := cr.items.Load(hash)
-	return ok
+// assumes caller holds lock for hash and the registryLock, does NOT remove chunk from disk
+func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
+	entry, ok := cr.items.Load(hash)
+	if ok {
+		if entry.containingList.Remove(entry.element) == nil {
+			return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in hotList against expectation", hash))	
+		}
+		cr.items.Delete(hash)
+	} else {
+		return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in registry", hash))
+	}
 }
+
+func (cr *ChunkRegistry) getHotLRU() *list.Element {
+	max := nil
+	for e := cr.hotList.Front(); e != nil; e = e.Next() {
+		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
+		maxAccessTimes := max.Value.(*ChunkEntry).accessTimes
+		if max == nil || eAccessTimes[len(eAccessTimes) - K] < maxAccessTimes[len(maxAccessTimes) - K] {
+			max = e
+		}
+	}
+	return max
+}
+
+func (cr *ChunkRegistry) GetLength() int {
+	cr.registryLock.Lock()
+	defer cr.registryLock.Unlock()
+	return len(cr.coldList) + len(cr.hotList)
+}
+
 
 // SnapshotManager manages snapshots stored on the node.
 type SnapshotManager struct {
