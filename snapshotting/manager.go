@@ -139,7 +139,9 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 func (cr *ChunkRegistry) getHotLRU() *list.Element {
 	max := nil
 	for e := cr.hotList.Front(); e != nil; e = e.Next() {
-		if max == nil || e.Value.(*ChunkEntry).accessTimes[K - 1] < max.Value.(*ChunkEntry).accessTimes[K - 1] {
+		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
+		maxAccessTimes := max.Value.(*ChunkEntry).accessTimes
+		if max == nil || eAccessTimes[len(eAccessTimes) - K] < maxAccessTimes[len(maxAccessTimes) - K] {
 			max = e
 		}
 	}
