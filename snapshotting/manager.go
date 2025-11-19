@@ -68,7 +68,7 @@ type ChunkRegistry struct {
 	capacity int
 	hotList  *list.List		// TODO: possibly change to heap implementation
 	coldList *list.List
-	items    map[string]*ChunkEntry
+	items    sync.Map
 }
 
 func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
@@ -78,7 +78,6 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 		capacity: capacity,	// TODO: tune
 		hotList:  list.New(),
 		coldList: list.New(),
-		items:    make(map[string]*ChunkEntry),
 	}
 }
 
@@ -86,13 +85,13 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
 	cr.registryLock.Lock()
 	defer cr.registryLock.Unlock()
-	
-	entry, ok := cr.items[hash]
+
+	entry, ok := cr.items.Load(hash)
 	if ok {
 		if entry.containingList.Remove(entry.element) == nil {
 			return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in hotList against expectation", hash))	
 		}
-		delete(cr.items, hash)
+		cr.items.Delete(hash)
 	} else {
 		return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in registry", hash))
 	}
@@ -107,7 +106,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 	defer cr.registryLock.Unlock()
 
     now := time.Now()
-	entry, ok := cr.items[hash]
+	entry, ok := cr.items.Load(hash)
 	if !ok {
 		entry = &ChunkEntry{
 			hash: hash,
@@ -116,7 +115,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 			element: nil,
 			containingList: cr.coldList,
 		}
-		cr.items[hash] = entry
+		cr.items.Store(hash, entry)
 		entry.element = cr.coldList.PushFront(entry)
 		_, err := cr.correctLength(hash)
 		return err
@@ -149,6 +148,16 @@ func (cr *ChunkRegistry) getHotLRU() *list.Element {
 	return max
 }
 
+func (cr *ChunkRegistry) GetLength() int {
+	count := 0
+	cr.items.Range(func(key, value any) bool {
+		count++
+		return true
+	})
+	return count
+
+}
+
 // deletes extra chunks. returns number of chunks deleted. assumes lock for latestChunkHash is held by caller
 func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 	cr.registryLock.Lock()	// can't have multiple processes calling this simultaneously
@@ -156,7 +165,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 
 	count := 0
 
-	for len(cr.items) > cr.capacity {
+	for cr.GetLength() > cr.capacity {
 		hotLRU, coldLRU := nil
 		
 		if cr.hotList.Len() > 0 {
@@ -192,7 +201,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 
 // should only be called while holding the chunk's lock
 func (cr *ChunkRegistry) ChunkExists(hash string) bool {
-	_, ok := cr.items[hash]
+	_, ok := cr.items.Load(hash)
 	return ok
 }
 
@@ -471,7 +480,7 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 				lock.Lock()
 				log.Debugf("uploadMemFile: Acquired lock for chunk %s in %v", job.hash, time.Since(start))
 				
-				if _, ok := mgr.chunkRegistry.items[job.hash]; ok {
+				if mgr.chunkRegistry.ChunkExists(job.hash) {
 					lock.Unlock()
 					continue
 				}
