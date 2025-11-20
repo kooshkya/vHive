@@ -387,15 +387,21 @@ func (mgr *SnapshotManager) CleanChunks() error {
 	mgr.chunkRegistry.registryLock.Lock()
 	defer mgr.chunkRegistry.registryLock.Unlock()
 	
+	hashes = []string
+
 	for hash, entry := range mgr.chunkRegistry.items {
 		lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 		lock := lockI.(*sync.Mutex)
 		lock.Lock()
 		defer lock.Unlock()
+
+		hashes = append(hashes, entry.hash)
 	}
 
-	os.RemoveAll(filepath.Join(mgr.baseFolder, chunkPrefix))
-	os.MkdirAll(filepath.Join(mgr.baseFolder, chunkPrefix), os.ModePerm)
+	for hash := range hashes {
+		os.Remove(mgr.GetChunkFilePath(hash))
+	}
+
 	mgr.chunkRegistry = NewChunkRegistry(mgr, K, capacity)
 	return nil
 }
