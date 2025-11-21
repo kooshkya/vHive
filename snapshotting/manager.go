@@ -117,7 +117,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 			} else if len(entry.accessTimes) < cr.K {
 				cr.coldList.MoveToFront(entry.element)
 			} else {
-				return errors.New("chunk %s is on cold list but has K or more accesses!", hash)
+				return errors.New(fmt.Sprintf("chunk %s is on cold list but has K or more accesses!", hash))
 			}
 		} 
 	}
@@ -130,7 +130,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 	count := 0
 
 	for cr.GetLength() > cr.capacity {
-		hotLRU, coldLRU := nil
+		var hotLRU, coldLRU *ChunkEntry = nil, nil
 		
 		if cr.hotList.Len() > 0 {
 			hotLRU = cr.getHotLRU().Value.(*ChunkEntry)
@@ -145,7 +145,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 		} else if coldLRU == nil {
 			to_remove = hotLRU.hash
 		} else {
-			if coldLRU.accessTimes[len(coldLRU.accessTimes) - 1] < hotLRU.accessTimes[len(hotLRU) - K] {
+			if hotLRU.accessTimes[len(hotLRU.accessTimes) - K].After(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1] ) {
 				to_remove = coldLRU.hash
 			} else {
 				to_remove = hotLRU.hash
@@ -156,7 +156,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 			cr.snpMgr.RemoveChunk(to_remove)
 			count += 1
 		} else {
-			return count, errors.New("correctLength: Would have deadlocked on removal of %s", to_remove)
+			return count, errors.New(fmt.Sprintf("correctLength: Would have deadlocked on removal of %s", to_remove))
 		}
 	}
 
@@ -165,23 +165,25 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 
 // assumes caller holds lock for hash and the registryLock, does NOT remove chunk from disk
 func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
-	entry, ok := cr.items.Load(hash)
+	entryIface, ok := cr.items.Load(hash)
 	if ok {
+		entry := entryIface.(*ChunkEntry)
 		if entry.containingList.Remove(entry.element) == nil {
 			return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in hotList against expectation", hash))	
 		}
 		cr.items.Delete(hash)
+		return nil
 	} else {
 		return errors.New(fmt.Sprintf("UnregisterChunk: chunk to delete (%s) not in registry", hash))
 	}
 }
 
 func (cr *ChunkRegistry) getHotLRU() *list.Element {
-	max := nil
+	var max *list.Element = nil
 	for e := cr.hotList.Front(); e != nil; e = e.Next() {
 		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
 		maxAccessTimes := max.Value.(*ChunkEntry).accessTimes
-		if max == nil || eAccessTimes[len(eAccessTimes) - K] < maxAccessTimes[len(maxAccessTimes) - K] {
+		if max == nil || maxAccessTimes[len(maxAccessTimes) - K].After(eAccessTimes[len(eAccessTimes) - K]) {
 			max = e
 		}
 	}
@@ -190,7 +192,7 @@ func (cr *ChunkRegistry) getHotLRU() *list.Element {
 
 // assumes registryLock is held
 func (cr *ChunkRegistry) GetLength() int {
-	return len(cr.coldList) + len(cr.hotList)
+	return cr.coldList.Len() + cr.hotList.Len()
 }
 
 
@@ -388,18 +390,22 @@ func (mgr *SnapshotManager) CleanChunks() error {
 	mgr.chunkRegistry.registryLock.Lock()
 	defer mgr.chunkRegistry.registryLock.Unlock()
 	
-	hashes = []string
+	hashes := []string{}
 
-	for hash, entry := range mgr.chunkRegistry.items {
+	mgr.chunkRegistry.items.Range(func(key, value interface{}) bool {
+		hash := key.(string)
+		entry := value.(*ChunkEntry) 
+	
 		lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 		lock := lockI.(*sync.Mutex)
 		lock.Lock()
-		defer lock.Unlock()
-
+		defer lock.Unlock()            
+	
 		hashes = append(hashes, entry.hash)
-	}
+		return true       
+	})
 
-	for hash := range hashes {
+	for _, hash := range hashes {
 		os.Remove(mgr.GetChunkFilePath(hash))
 	}
 
