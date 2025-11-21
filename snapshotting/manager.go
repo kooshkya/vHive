@@ -808,7 +808,7 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	
 	defer lock.Unlock()
 
-	if _, ok := mgr.chunkRegistry.ChunkExists(hash){
+	if mgr.chunkRegistry.ChunkExists(hash){
 		mgr.chunkRegistry.AddAccess(hash)
 		return nil // already downloaded
 	}
