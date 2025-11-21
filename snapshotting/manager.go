@@ -92,9 +92,9 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 	defer cr.registryLock.Unlock()
 
     now := time.Now()
-	entry, ok := cr.items.Load(hash)
+	entryIface, ok := cr.items.Load(hash)
 	if !ok {
-		entry = &ChunkEntry{
+		entry := &ChunkEntry{
 			hash: hash,
 			accessTimes: []time.Time{now},
 
@@ -106,6 +106,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		_, err := cr.correctLength(hash)
 		return err
 	} else {
+		entry := entryIface.(*ChunkEntry)
 		entry.accessTimes = append(entry.accessTimes, now)
 
 		if entry.containingList == cr.coldList {
