@@ -3,6 +3,7 @@ sudo sysctl -w net.bridge.bridge-nf-call-iptables=1 && sudo sysctl -w net.bridge
 sudo mkdir -p /etc/firecracker-containerd && sudo mkdir -p /var/lib/firecracker-containerd/runtime && sudo mkdir -p /etc/containerd/
 
 git lfs fetch
+git lfs checkout
 
 sudo cp bin/{firecracker,jailer,containerd-shim-aws-firecracker,firecracker-containerd,firecracker-ctr} /usr/local/bin
 sudo cp bin/default-rootfs.img /var/lib/firecracker-containerd/runtime
@@ -20,4 +21,4 @@ tmux send -t http-address-resolver "sudo PATH=$PATH /usr/local/bin/http-address-
 tmux new -s demux-snapshotter -d
 tmux send -t demux-snapshotter 'while true; do sudo /usr/local/bin/demux-snapshotter; done' ENTER
 
-pushd ~; git clone https://github.com/vhive-serverless/vswarm; cd vswarm/tools/relay; make relay; popd
+pushd ~; git clone https://github.com/vhive-serverless/vswarm; source /etc/profile; cd vswarm/tools/relay; make relay; popd
