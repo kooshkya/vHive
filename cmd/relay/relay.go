@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"io"
+	"bytes"
 
 	ctrdlog "github.com/containerd/containerd/log"
 	log "github.com/sirupsen/logrus"
@@ -42,6 +44,23 @@ var (
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	log.Debugf("request received, image %s, revision %s", r.Header.Get("image"), r.Header.Get("revision"))
+
+	log.Debug("=== Incoming Request ===")
+
+	// Print method + URL
+	log.Debugf("%s %s", r.Method, r.URL.String())
+
+	// Print headers
+	for k, v := range r.Header {
+		log.Debugf("Header[%s] = %v", k, v)
+	}
+
+	// Read body safely (must reinsert it so proxy can still read it)
+	bodyBytes, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	log.Debugf("Body:\n%s", string(bodyBytes))
+	log.Debug("=== End Request ===")
 
 	ctx := context.Background()
 	relayCtx, cancel := context.WithCancel(ctx)
@@ -124,7 +143,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			log.Debugf("vswarm relay output:\n%s\n", out)
 			
 			if err != nil {
-				fmt.Printf("relay error: %v\n", err)
+				fmt.Printf("vswarm relay error: %v\n", err)
 			}
 		}()
 
