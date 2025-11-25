@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	homeDir = "/users/lkondras"
+	homeDir = "/users/kooshkya"
 	// snapDir = "/tmp/snapshots"
 	snapDir  = homeDir + "/snapshots"
 	vhiveDir = homeDir + "/vhive"
