@@ -316,15 +316,15 @@ func (mgr *SnapshotManager) UploadSnapshot(revision string) error {
 		snap.GetInfoFilePath(),
 	}
 
+	err = mgr.uploadMemFile(snap)
+	if err != nil {
+		return errors.Wrapf(err, "uploading memory file for snapshot %s", revision)
+	}
+
 	for _, filePath := range files {
 		if err := mgr.uploadFile(revision, filePath); err != nil {
 			return err
 		}
-	}
-
-	err = mgr.uploadMemFile(snap)
-	if err != nil {
-		return errors.Wrapf(err, "uploading memory file for snapshot %s", revision)
 	}
 
 	return nil
