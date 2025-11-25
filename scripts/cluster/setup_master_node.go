@@ -25,6 +25,7 @@ package cluster
 import (
 	"os"
 	"path"
+	"time"
 
 	configs "github.com/vhive-serverless/vHive/scripts/configs"
 	utils "github.com/vhive-serverless/vHive/scripts/utils"
@@ -278,10 +279,16 @@ func InstallKnativeServingComponent() error {
 		}
 	}
 
-	_, err := utils.ExecShellCmd("kubectl -n knative-serving wait deploy webhook --timeout=180s --for=condition=Available")
-	if !utils.CheckErrorWithTagAndMsg(err, "Failed to install Knative Serving component!\n") {
-		return err
-	}
+	start := time.Now()
+    
+    _, err := utils.ExecShellCmd("kubectl -n knative-serving wait deploy webhook --timeout=600s --for=condition=Available")
+
+    elapsed := time.Since(start)
+    utils.InfoPrintf("Knative webhook availability check completed in %s.", elapsed.String())
+
+    if !utils.CheckErrorWithTagAndMsg(err, "Failed to install Knative Serving component!\n") {
+        return err
+    }
 
 	return nil
 }
