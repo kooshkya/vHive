@@ -139,6 +139,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			}
 			orch.PauseVM(ctx, vmId)
 			orch.CreateSnapshot(ctx, vmId, snap)
+			snapMgr.CreateRecipeFile(snap)
 			snapMgr.CommitSnapshot(rev)
 			snapMgr.UploadSnapshot(rev)
 			// snapMgr.DeleteSnapshot(rev)
