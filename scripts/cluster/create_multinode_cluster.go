@@ -127,10 +127,16 @@ func DeployKubernetes() error {
 // Make kubectl work for non-root user
 func KubectlForNonRoot() error {
 	utils.WaitPrintf("Making kubectl work for non-root user")
-	_, err := utils.ExecShellCmd("mkdir -p %s/.kube && sudo cp -i /etc/kubernetes/admin.conf %s/.kube/config && sudo chown $(id -u):$(id -g) %s/.kube/config",
+
+    bashCmdWithWait := `for i in {1..5}; do [ -f /etc/kubernetes/admin.conf ] && break; sleep 2; done && \
+        [ -f /etc/kubernetes/admin.conf ] && \
+        mkdir -p %s/.kube && sudo cp -i /etc/kubernetes/admin.conf %s/.kube/config && sudo chown $(id -u):$(id -g) %s/.kube/config`
+    
+	_, err := utils.ExecShellCmd(bashCmdWithWait,
 		configs.System.UserHomeDir,
 		configs.System.UserHomeDir,
 		configs.System.UserHomeDir)
+
 	if !utils.CheckErrorWithTagAndMsg(err, "Failed to make kubectl work for non-root user!\n") {
 		return err
 	}
