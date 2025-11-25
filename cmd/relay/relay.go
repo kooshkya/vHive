@@ -113,10 +113,22 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Debugf("Relay args: %s", relayArgs)
 
 		go func() {
-			exec.CommandContext(relayCtx, homeDir+"/vswarm/tools/relay/server", strings.Split(relayArgs, " ")...).Run()
+			cmd := exec.CommandContext(
+				relayCtx,
+				homeDir+"/vswarm/tools/relay/server",
+				strings.Split(relayArgs, " ")...,
+			)
+			
+			out, err := cmd.CombinedOutput()
+			
+			log.Debugf("vswarm relay output:\n%s\n", out)
+			
+			if err != nil {
+				fmt.Printf("vswarm relay error: %v\n", err)
+			}
 		}()
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	log.Debugf("Sending invocation to %s", vmId)
