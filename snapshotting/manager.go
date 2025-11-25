@@ -482,10 +482,6 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	}
 
 	mgr.uploadFile(snap.GetId(), recipeFilePath)
-<<<<<<< HEAD
-	os.Remove(recipeFilePath)
-=======
->>>>>>> 5afcc67c (fix bug with recipeFile)
 
 	log.Infof("uploadMemFile for snapshot %s completed in %s, chunk count: %d", snap.GetId(), time.Since(startTime), chunkIndex+1)
 	return nil
