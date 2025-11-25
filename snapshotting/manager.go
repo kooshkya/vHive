@@ -247,7 +247,7 @@ func (mgr *SnapshotManager) CleanChunks() error {
 func (mgr *SnapshotManager) CreateRecipeFile(snap *Snapshot) error {
 	startTime := time.Now()
 	defer func() {
-		log.Debugf("created recipeFile in %s", time.Since(startTime))
+		log.Debugf("created recipeFile for revision %s in %s", snap.id, time.Since(startTime))
 	}()
 
 	if !mgr.chunking {
