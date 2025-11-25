@@ -151,8 +151,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			}
 			orch.PauseVM(ctx, vmId)
 			orch.CreateSnapshot(ctx, vmId, snap)
-			snapMgr.UploadSnapshot(rev)
+			snapMgr.CreateRecipeFile(snap)
 			snapMgr.CommitSnapshot(rev)
+			snapMgr.UploadSnapshot(rev)
 			// snapMgr.DeleteSnapshot(rev)
 			// snapMgr.CleanChunks()
 			log.Debugf("finished snapshotting %s", vmId)

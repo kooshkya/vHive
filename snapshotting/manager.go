@@ -243,6 +243,66 @@ func (mgr *SnapshotManager) CleanChunks() error {
 	return nil
 }
 
+// Uses memfile to create a recipeFile for the snapshot.
+func (mgr *SnapshotManager) CreateRecipeFile(snap *Snapshot) error {
+	startTime := time.Now()
+	defer func() {
+		log.Debugf("created recipeFile in %s", time.Since(startTime))
+	}()
+
+	if !mgr.chunking {
+		return nil
+	}
+
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	if snap.ready {
+		return errors.Errorf("can't CreateRecipeFile: snapshot for revision %s is alreadd commited.", snap.id)
+	}
+
+	file, err := os.Open(snap.GetMemFilePath())
+	if err != nil {
+		return errors.Wrapf(err, "CreateRecipeFile: error opening memory file for chunked upload")
+	}
+	defer file.Close()
+
+	buffer := make([]byte, mgr.chunkSize)
+	chunkIndex := 0
+	recipe := make([]byte, 0)
+
+	for {
+		n, err := io.ReadFull(file, buffer)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return errors.Wrapf(err, "reading chunk %d from memory file", chunkIndex)
+		}
+		if n == 0 {
+			break
+		}
+
+		hash := md5.Sum(buffer[:n])
+		recipe = append(recipe, hash[:]...)
+		chunkIndex++
+
+		if err == io.EOF {
+			break
+		}
+	}
+
+	recipeFilePath := snap.GetRecipeFilePath()
+	recipeFile, err := os.Create(recipeFilePath)
+	if err != nil {
+		return errors.Wrapf(err, "creating recipe file for revision %s", snap.id)
+	}
+	defer recipeFile.Close()
+
+	if _, err := recipeFile.Write(recipe); err != nil {
+		return errors.Wrapf(err, "writing recipe file for revision %s", snap.id)
+	}
+
+	return nil
+}
+
 // UploadSnapshot Uploads a snapshot to MinIO.
 // A manifest is created and uploaded to MinIO to describe the snapshot contents.
 func (mgr *SnapshotManager) UploadSnapshot(revision string) error {
@@ -422,7 +482,6 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	}
 
 	mgr.uploadFile(snap.GetId(), recipeFilePath)
-	// os.Remove(recipeFilePath)
 
 	log.Infof("uploadMemFile for snapshot %s completed in %s, chunk count: %d", snap.GetId(), time.Since(startTime), chunkIndex+1)
 	return nil
