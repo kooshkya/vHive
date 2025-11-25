@@ -178,7 +178,7 @@ func (po *PageOperations) PopulateFromFile(uffd int, region *GuestRegionUffdMapp
 		mappedAddr, err := po.mapChunk(hashKey)
 
 		if err != nil {
-			log.Errorf("Failed to map chunk: %v", err)
+			log.Errorf("PopulateFromFile: failed to map chunk: %v", err)
 			return false
 		}
 
@@ -262,7 +262,7 @@ func (po *PageOperations) insertWorkingSet(uffd int, region *GuestRegionUffdMapp
 
 					mappedAddr, err := po.mapChunk(hashKey)
 					if err != nil {
-						log.Errorf("Failed to map chunk: %v", err)
+						log.Errorf("insertWorkingSet: failed to map chunk: %v", err)
 						continue
 					}
 					src = mappedAddr + (uintptr(pageAddr) % uintptr(po.snapMgr.GetChunkSize()))
