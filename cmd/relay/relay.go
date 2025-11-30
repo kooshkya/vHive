@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"io"
-	"bytes"
 
 	ctrdlog "github.com/containerd/containerd/log"
 	log "github.com/sirupsen/logrus"
