@@ -33,6 +33,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"sync/atomic"
+	"encoding/csv"
+	"strconv"
 
 	"github.com/pkg/errors"
 
@@ -58,6 +61,11 @@ type ChunkEntry struct {
 	containingList	*list.List
 }
 
+type ChunkStats struct {
+    Hits  int64
+    Calls int64
+}
+
 type ChunkRegistry struct {
 	registryLock	sync.Mutex
 	chunkLocks       sync.Map
@@ -67,6 +75,7 @@ type ChunkRegistry struct {
 	hotList  *list.List		// TODO: possibly change to heap implementation
 	coldList *list.List
 	items    sync.Map
+	stats	sync.Map
 }
 
 func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
@@ -82,7 +91,32 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 // should only be called while holding the chunk's lock, otherwise might return true while chunk is being deleted
 func (cr *ChunkRegistry) ChunkExists(hash string) bool {
 	_, ok := cr.items.Load(hash)
+	actualIface, _ := cr.stats.LoadOrStore(hash, &ChunkStats{})
+    stats := actualIface.(*ChunkStats)
+	atomic.AddInt64(&stats.Calls, 1)
+    if ok {
+        atomic.AddInt64(&stats.Hits, 1)
+    }
 	return ok
+}
+
+func (cr *ChunkRegistry) GetHitStats() map[string]ChunkStats {
+    allStats := make(map[string]ChunkStats)
+    
+    cr.stats.Range(func(key, value interface{}) bool {
+        hash := key.(string)
+        statsPtr := value.(*ChunkStats)
+        
+        // Read the atomic values safely
+        currentStats := ChunkStats{
+            Calls: atomic.LoadInt64(&statsPtr.Calls),
+            Hits:  atomic.LoadInt64(&statsPtr.Hits),
+        }
+        allStats[hash] = currentStats
+        return true
+    })
+    
+    return allStats
 }
 
 // AddAccess assumes:
@@ -239,6 +273,47 @@ func NewSnapshotManager(baseFolder string, store storage.ObjectStorage, chunking
 
 	return manager
 }
+
+func (mgr *SnapshotManager) WriteHitStatsToCSV(filePath string) error {
+	statsMap := mgr.chunkRegistry.GetHitStats()
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	header := []string{"ChunkHash", "Calls", "Hits", "HitRate"}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	for hash, stats := range statsMap {
+		var hitRate float64
+		if stats.Calls > 0 {
+			hitRate = float64(stats.Hits) / float64(stats.Calls)
+		} else {
+			hitRate = 0.0
+		}
+
+		record := []string{
+			hash,
+			strconv.FormatInt(stats.Calls, 10),
+			strconv.FormatInt(stats.Hits, 10),
+			fmt.Sprintf("%.4f", hitRate),
+		}
+
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write record for hash %s: %w", hash, err)
+		}
+	}
+
+	return nil
+}
+
 
 // RecoverSnapshots scans the base folder and recreates snapshot entries in the manager
 // for any existing snapshots. This is used when skipCleanup is true to recover state
