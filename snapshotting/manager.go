@@ -488,9 +488,9 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 				lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(job.hash, &sync.Mutex{})
 				lock := lockI.(*sync.Mutex)
 
-				start := time.Now()
+				// start := time.Now()
 				lock.Lock()
-				log.Debugf("uploadMemFile: Acquired lock for chunk %s in %v", job.hash, time.Since(start))
+				// log.Debugf("uploadMemFile: Acquired lock for chunk %s in %v", job.hash, time.Since(start))
 				
 				if mgr.chunkRegistry.ChunkExists(job.hash) {
 					lock.Unlock()
@@ -755,9 +755,9 @@ func (mgr *SnapshotManager) DownloadAndReturnChunk(hash string) ([]byte, error) 
 	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 	lock := lockI.(*sync.Mutex)
 
-	start := time.Now()
+	// start := time.Now()
 	lock.Lock()
-	log.Debugf("DownloadAndReturnChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	// log.Debugf("DownloadAndReturnChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
 
 	defer lock.Unlock()
 
@@ -809,9 +809,9 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 	lock := lockI.(*sync.Mutex)
 
-	start := time.Now()
+	// start := time.Now()
 	lock.Lock()
-	log.Debugf("DownloadChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	// log.Debugf("DownloadChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
 	
 	defer lock.Unlock()
 
@@ -835,10 +835,10 @@ func (mgr *SnapshotManager) RemoveChunk(hash string) error {
 	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 	lock := lockI.(*sync.Mutex)
 
-	start := time.Now()
-	log.Debugf("RemoveChunk: Trying to acquire lock for chunk %s", hash)
+	// start := time.Now()
+	// log.Debugf("RemoveChunk: Trying to acquire lock for chunk %s", hash)
 	lock.Lock()
-	log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	// log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
 	
 	defer lock.Unlock()
 
