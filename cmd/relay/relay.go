@@ -89,6 +89,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Snapshot Download Error, snap: %p", snap) , http.StatusInternalServerError)
 		}
 		resp, metric, err = orch.LoadSnapshot(ctx, snap, false, false)
+		if err != nil {
+			log.Errorf("LoadSnapshot error is %v", err)
+			http.Error(w, fmt.Sprintf("Snapshot Load Error, metric: %p", metric) , http.StatusInternalServerError)
+		}
 		log.Debugf("Snapshot Load Result: metric: %p", metric)
 		log.Debugf("Loaded snapshot for rev %s in %v", rev, metric.Total())
 	} else { // boot case
