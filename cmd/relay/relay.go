@@ -83,6 +83,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Debugf("Using remote snapshot for rev %s", rev)
 		startDownload := time.Now()
 		snap, err = snapMgr.DownloadSnapshot(rev)
+		if err != nil {
+			log.Errorf("DownloadSnapshot error is %v", err)
+		}
+		if snap != nil {
+			log.Errorf("DownloadSnapshot snap is nil without error!")
+		}
 		downloadDelay := time.Since(startDownload)
 		log.Debugf("Downloaded snapshot for rev %s in %v", rev, downloadDelay.Microseconds())
 		if err != nil || snap == nil {
