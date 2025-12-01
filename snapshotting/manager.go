@@ -36,6 +36,7 @@ import (
 	"sync/atomic"
 	"encoding/csv"
 	"strconv"
+	"math/rand"
 
 	"github.com/pkg/errors"
 
@@ -162,36 +163,50 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 // deletes extra chunks. returns number of chunks deleted. assumes registryLock and also chunk lock for latestChunkHash is held by caller
 func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 	count := 0
-
 	for cr.GetLength() > cr.capacity {
-		var hotLRU, coldLRU *ChunkEntry = nil, nil
-		
-		if cr.hotList.Len() > 0 {
-			hotLRU = cr.getHotLRU().Value.(*ChunkEntry)
-		}
-		if cr.coldList.Len() > 0 {
-			coldLRU = cr.coldList.Back().Value.(*ChunkEntry)
-		}
-
-		to_remove := ""
-		if hotLRU == nil {
-			to_remove = coldLRU.hash
-		} else if coldLRU == nil {
-			to_remove = hotLRU.hash
-		} else {
-			if hotLRU.accessTimes[len(hotLRU.accessTimes) - K].After(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1] ) {
-				to_remove = coldLRU.hash
-			} else {
-				to_remove = hotLRU.hash
+		total := cr.GetLength();
+		selected := rand.Intn(total)
+		head := cr.coldList.Front()
+		for selected > 0 {
+			head = head.Next()
+			if head == nil {
+				head = cr.hotList.Front()
+				if head == cr.hotList.Back() {
+					return count, errors.New(fmt.Sprintf("latestChunkHash was %s", latestChunkHash))
+				}
 			}
+			selected -= 1
 		}
+		cr.snpMgr.RemoveChunk(head.Value.(*ChunkEntry).hash)
+		count += 1
+		// var hotLRU, coldLRU *ChunkEntry = nil, nil
+		
+		// if cr.hotList.Len() > 0 {
+		// 	hotLRU = cr.getHotLRU().Value.(*ChunkEntry)
+		// }
+		// if cr.coldList.Len() > 0 {
+		// 	coldLRU = cr.coldList.Back().Value.(*ChunkEntry)
+		// }
 
-		if to_remove != latestChunkHash {
-			cr.snpMgr.RemoveChunk(to_remove)
-			count += 1
-		} else {
-			return count, errors.New(fmt.Sprintf("correctLength: Would have deadlocked on removal of %s", to_remove))
-		}
+		// to_remove := ""
+		// if hotLRU == nil {
+		// 	to_remove = coldLRU.hash
+		// } else if coldLRU == nil {
+		// 	to_remove = hotLRU.hash
+		// } else {
+		// 	if hotLRU.accessTimes[len(hotLRU.accessTimes) - K].After(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1] ) {
+		// 		to_remove = coldLRU.hash
+		// 	} else {
+		// 		to_remove = hotLRU.hash
+		// 	}
+		// }
+
+		// if to_remove != latestChunkHash {
+		// 	cr.snpMgr.RemoveChunk(to_remove)
+		// 	count += 1
+		// } else {
+		// 	return count, errors.New(fmt.Sprintf("correctLength: Would have deadlocked on removal of %s", to_remove))
+		// }
 	}
 
 	return count, nil
@@ -212,16 +227,16 @@ func (cr *ChunkRegistry) UnregisterChunk(hash string) error {
 	}
 }
 
-func (cr *ChunkRegistry) getHotLRU() *list.Element {
-	var max *list.Element = nil
-	for e := cr.hotList.Front(); e != nil; e = e.Next() {
-		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
-		if max == nil || max.Value.(*ChunkEntry).accessTimes[len(max.Value.(*ChunkEntry).accessTimes) - K].After(eAccessTimes[len(eAccessTimes) - K]) {
-			max = e
-		}
-	}
-	return max
-}
+// func (cr *ChunkRegistry) getHotLRU() *list.Element {
+// 	var max *list.Element = nil
+// 	for e := cr.hotList.Front(); e != nil; e = e.Next() {
+// 		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
+// 		if max == nil || max.Value.(*ChunkEntry).accessTimes[len(max.Value.(*ChunkEntry).accessTimes) - K].After(eAccessTimes[len(eAccessTimes) - K]) {
+// 			max = e
+// 		}
+// 	}
+// 	return max
+// }
 
 // assumes registryLock is held
 func (cr *ChunkRegistry) GetLength() int {
