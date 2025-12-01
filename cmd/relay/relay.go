@@ -30,6 +30,7 @@ const (
 	// snapDir = "/tmp/snapshots"
 	snapDir  = homeDir + "/snapshots"
 	hitRateFile = snapDir + "/hit_rates.csv"
+	accessFile = snapDir + "/access.txt"
 	vhiveDir = homeDir + "/vhive"
 )
 
@@ -162,6 +163,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		log.Debugf("removing %s", vmId)
 		snapMgr.WriteHitStatsToCSV(hitRateFile)
+		snapMgr.WriteAccessHistoryToTextFile(accessFile)
 		if snap == nil {
 			snap, err = snapMgr.InitSnapshot(rev, image)
 			if err != nil && strings.Contains(err.Error(), "Snapshot") && strings.Contains(err.Error(), "already exists") {

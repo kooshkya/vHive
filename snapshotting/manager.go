@@ -77,6 +77,9 @@ type ChunkRegistry struct {
 	coldList *list.List
 	items    sync.Map
 	stats	sync.Map
+
+	accessHistory   []string 
+    historyLock     sync.Mutex
 }
 
 func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
@@ -98,7 +101,18 @@ func (cr *ChunkRegistry) ChunkExists(hash string) bool {
     if ok {
         atomic.AddInt64(&stats.Hits, 1)
     }
+	cr.historyLock.Lock()
+    cr.accessHistory = append(cr.accessHistory, hash)
+    cr.historyLock.Unlock()
 	return ok
+}
+
+func (cr *ChunkRegistry) GetAccessHistory() []string {
+    cr.historyLock.Lock()
+    historyCopy := make([]string, len(cr.accessHistory))
+    copy(historyCopy, cr.accessHistory)
+    cr.historyLock.Unlock()
+    return historyCopy
 }
 
 func (cr *ChunkRegistry) GetHitStats() map[string]ChunkStats {
@@ -338,6 +352,27 @@ func (mgr *SnapshotManager) WriteHitStatsToCSV(filePath string) error {
 }
 
 
+func (mgr *SnapshotManager) WriteAccessHistoryToTextFile(filePath string) error {
+    accessList := mgr.chunkRegistry.GetAccessHistory()
+
+    file, err := os.Create(filePath)
+    if err != nil {
+        return fmt.Errorf("failed to create text file %s: %w", filePath, err)
+    }
+    defer file.Close()
+
+    for i, hash := range accessList {
+        _, err := fmt.Fprintf(file, "%s\n", hash)
+        
+        if err != nil {
+            return fmt.Errorf("failed to write hash at index %d (%s) to file: %w", i, hash, err)
+        }
+    }
+
+    return nil
+}
+
+
 // RecoverSnapshots scans the base folder and recreates snapshot entries in the manager
 // for any existing snapshots. This is used when skipCleanup is true to recover state
 // after a restart.
@@ -421,9 +456,10 @@ func (mgr *SnapshotManager) InitSnapshot(revision, image string) (*Snapshot, err
 	logger := log.WithFields(log.Fields{"revision": revision, "image": image})
 	logger.Debug("Initializing snapshot corresponding to revision and image")
 
-	if _, present := mgr.snapshots[revision]; present {
+	if snp, present := mgr.snapshots[revision]; present {
+		ready := snp.ready
 		mgr.Unlock()
-		return nil, errors.New(fmt.Sprintf("Add: Snapshot for revision %s already exists", revision))
+		return nil, errors.New(fmt.Sprintf("Add: Snapshot for revision %s already exists and its ready is %v", revision, ready))
 	}
 
 	// Create snapshot object and move into creating state
