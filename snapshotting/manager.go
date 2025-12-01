@@ -167,18 +167,26 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 		total := cr.GetLength();
 		selected := rand.Intn(total)
 		head := cr.coldList.Front()
+		isOnHot := false
 		for selected > 0 {
 			head = head.Next()
 			if head == nil {
-				head = cr.hotList.Front()
-				if head == cr.hotList.Back() {
-					return count, errors.New(fmt.Sprintf("latestChunkHash was %s", latestChunkHash))
+				if ! isOnHot {
+					head = cr.hotList.Front()
+					isOnHot = true
+				} else {
+					return count, errors.New(fmt.Sprintf("bad index and latestChunkHash was %s", latestChunkHash))
 				}
 			}
 			selected -= 1
 		}
-		cr.snpMgr.RemoveChunk(head.Value.(*ChunkEntry).hash)
-		count += 1
+		to_remove := head.Value.(*ChunkEntry).hash
+		if to_remove != latestChunkHash {
+			cr.snpMgr.RemoveChunk(to_remove)
+			count += 1
+		} else {
+			return count, errors.New(fmt.Sprintf("correctLength: Would have deadlocked on removal of %s", to_remove))
+		}
 		// var hotLRU, coldLRU *ChunkEntry = nil, nil
 		
 		// if cr.hotList.Len() > 0 {
