@@ -139,6 +139,7 @@ func (cr *ChunkRegistry) GetHitStats() map[string]ChunkStats {
 func (cr *ChunkRegistry) AddAccess(hash string) error {
 	cr.registryLock.Lock()	// have to lock because we write to list.Lists (not concurrency-safe.) also need for correctLength.
 	defer cr.registryLock.Unlock()
+	logger := log.WithField("baseFolder", cr.snpMgr.baseFolder)
 
     now := time.Now()
 	entryIface, ok := cr.items.Load(hash)
@@ -153,6 +154,9 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		cr.items.Store(hash, entry)
 		entry.element = cr.coldList.PushFront(entry)
 		_, err := cr.correctLength(hash)
+		if err != nil {
+			logger.Errorf("Error with correctLength: %v", err)
+		}
 		return err
 	} else {
 		entry := entryIface.(*ChunkEntry)
