@@ -23,8 +23,6 @@ import (
 	"golang.org/x/net/http2/h2c"
 
 	pkghttp "knative.dev/serving/pkg/http"
-
-	"net/http/httputil"
 )
 
 const (
@@ -43,13 +41,6 @@ var (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	requestDump, errr := httputil.DumpRequest(r, true)
-    if errr != nil {
-        log.Errorf("Failed to dump request: %v", errr)
-    } else {
-        log.Debugf("--- FULL INCOMING REQUEST START ---\n%s\n--- FULL INCOMING REQUEST END ---\n", string(requestDump))
-    }
-
 	log.Debugf("request received, image %s, revision %s", r.Header.Get("image"), r.Header.Get("revision"))
 
 	ctx := context.Background()
@@ -108,7 +99,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	vmId := resp.VMID
 
-	log.Debugf("created VM with ID %s and IP %s for request", resp.VMID, resp.GuestIP)
+	log.Debugf("created VM with ID %s and IP %s for revision %s", resp.VMID, resp.GuestIP, r.Header.Get("revision"))
 
 	relayArgs := r.Header.Get("relayArgs")
 	endpoint := resp.GuestIP + ":50051"
