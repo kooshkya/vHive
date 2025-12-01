@@ -112,7 +112,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		if entry.containingList == cr.coldList {
 			if len(entry.accessTimes) == cr.K {
 				cr.coldList.Remove(entry.element)
-				cr.hotList.PushFront(entry.element)
+				entry.element = cr.hotList.PushFront(entry)
 				entry.containingList = cr.hotList
 			} else if len(entry.accessTimes) < cr.K {
 				cr.coldList.MoveToFront(entry.element)
@@ -182,8 +182,7 @@ func (cr *ChunkRegistry) getHotLRU() *list.Element {
 	var max *list.Element = nil
 	for e := cr.hotList.Front(); e != nil; e = e.Next() {
 		eAccessTimes := e.Value.(*ChunkEntry).accessTimes
-		maxAccessTimes := max.Value.(*ChunkEntry).accessTimes
-		if max == nil || maxAccessTimes[len(maxAccessTimes) - K].After(eAccessTimes[len(eAccessTimes) - K]) {
+		if max == nil || max.Value.(*ChunkEntry).accessTimes[len(max.Value.(*ChunkEntry).accessTimes) - K].After(eAccessTimes[len(eAccessTimes) - K]) {
 			max = e
 		}
 	}
