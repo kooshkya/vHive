@@ -962,6 +962,9 @@ func (o *Orchestrator) LoadSnapshot(ctx context.Context, snap *snapshotting.Snap
 
 	conf := o.getVMConfig(vm)
 	conf.LoadSnapshot = true
+	if snap == nil {
+		return nil, nil, errors.New("ERROR: snap is nil")
+	}
 	conf.SnapshotPath = snap.GetSnapshotFilePath()
 	conf.MemFilePath = snap.GetMemFilePath()
 	conf.EnableDiffSnapshots = enableDiffSnapshots
