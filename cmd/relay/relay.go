@@ -87,7 +87,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Errorf("DownloadSnapshot error is %v", err)
 		}
-		if snap != nil {
+		if snap == nil {
 			log.Errorf("DownloadSnapshot snap is nil without error!")
 		}
 		downloadDelay := time.Since(startDownload)

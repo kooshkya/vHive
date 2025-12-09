@@ -791,7 +791,7 @@ func (mgr *SnapshotManager) DownloadSnapshot(revision string) (*Snapshot, error)
 	if err != nil {
 		return nil, errors.Wrapf(err, "downloading memory file for snapshot %s", revision)
 	}
-
+	log.Debug("Finished downloading memfile for revision " + revision)
 	// stat, _ := os.Stat(snap.GetMemFilePath())
 	// log.Infof("Downloaded memory file for snapshot %s, size is %d", snap.GetId(), stat.Size())
 
@@ -1049,6 +1049,7 @@ func (mgr *SnapshotManager) downloadFile(revision, filePath, fileName string) er
 }
 
 func (mgr *SnapshotManager) downloadWorkingSet(snap *Snapshot) error {
+	log.Debugf("start downloadWorkingSet for %s", snap.id)
 	wsFile, err := os.Open(snap.GetWSFilePath())
 	if err != nil {
 		return errors.Wrapf(err, "opening working set file for lazy chunked download")
