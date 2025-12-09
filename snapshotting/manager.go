@@ -495,6 +495,9 @@ func (mgr *SnapshotManager) CommitSnapshot(revision string) error {
 	}
 
 	snap.ready = true
+	
+	logger := log.WithFields(log.Fields{"revision": revision})
+	logger.Debug("finished commiting snapshot " + revision)
 
 	return nil
 }

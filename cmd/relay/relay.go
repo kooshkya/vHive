@@ -94,6 +94,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Debugf("Downloaded snapshot for rev %s in %v", rev, downloadDelay.Microseconds())
 		if err != nil || snap == nil {
 			http.Error(w, fmt.Sprintf("Snapshot Download Error, snap: %p", snap) , http.StatusInternalServerError)
+			return
 		}
 		resp, metric, err = orch.LoadSnapshot(ctx, snap, false, false)
 		if err != nil {
