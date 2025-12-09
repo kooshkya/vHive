@@ -79,16 +79,41 @@ type ChunkRegistry struct {
 
 	accessHistory   []string 
     historyLock     sync.Mutex
+
+	deletionCh	chan string
 }
 
 func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
-	return &ChunkRegistry{
+	cr := &ChunkRegistry{
 		snpMgr: snpMgr,
 		K:        K,
 		capacity: capacity,
 		hotList:  list.New(),
 		coldList: list.New(),
+		deletionCh: make(chan string, capacity),
 	}
+	go cr.deletionLoop()
+	return cr
+}
+
+func (cr *ChunkRegistry) deletionLoop() {
+    for hash := range cr.deletionCh {
+		lockI, _ := cr.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
+		lock := lockI.(*sync.Mutex)
+		lock.Lock()
+		
+		cr.registryLock.Lock()
+		if err := cr.UnregisterChunk(hash); err != nil {
+			log.Errorf("error while unregistering chunk %s: %v", hash, err)
+		}
+		cr.registryLock.Unlock()
+
+		if err := cr.snpMgr.RemoveChunk(hash); err != nil {
+			log.Errorf("failed to remove chunk: %s, err: %v", hash, err)
+		}
+		
+		lock.Unlock()
+    }
 }
 
 // should only be called while holding the chunk's lock, otherwise might return true while chunk is being deleted
@@ -152,7 +177,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		}
 		cr.items.Store(hash, entry)
 		entry.element = cr.coldList.PushFront(entry)
-		_, err := cr.correctLength(hash)
+		err := cr.correctLength()
 		if err != nil {
 			logger.Errorf("Error with correctLength: %v", err)
 		}
@@ -177,11 +202,9 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 	return nil
 }
 
-// deletes extra chunks. returns number of chunks deleted. assumes registryLock and also chunk lock for latestChunkHash is held by caller
-func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
-	count := 0
-
-	for cr.GetLength() > cr.capacity {
+// deletes extra chunk. assumes registryLock is held by caller
+func (cr *ChunkRegistry) correctLength() error {
+	if cr.GetLength() > cr.capacity {
 		var hotLRU, coldLRU *ChunkEntry = nil, nil
 		
 		if cr.hotList.Len() > 0 {
@@ -204,15 +227,10 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 			}
 		}
 
-		if to_remove != latestChunkHash {
-			cr.snpMgr.RemoveChunk(to_remove)
-			count += 1
-		} else {
-			return count, errors.New(fmt.Sprintf("correctLength: Would have deadlocked on removal of %s", to_remove))
-		}
+		cr.deletionCh <- to_remove
 	}
 
-	return count, nil
+	return nil
 }
 
 // assumes caller holds lock for hash and the registryLock, does NOT remove chunk from disk
@@ -946,19 +964,8 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	return nil
 }
 
-// removes the chunk from local disk
+// removes the chunk from local disk. assumes chunk lock is held
 func (mgr *SnapshotManager) RemoveChunk(hash string) error {
-	// TODO: finish logic
-	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
-	lock := lockI.(*sync.Mutex)
-
-	// start := time.Now()
-	// log.Debugf("RemoveChunk: Trying to acquire lock for chunk %s", hash)
-	lock.Lock()
-	// log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
-	
-	defer lock.Unlock()
-
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	// Check if file exists
@@ -973,8 +980,6 @@ func (mgr *SnapshotManager) RemoveChunk(hash string) error {
 	if err := os.Remove(chunkFilePath); err != nil {
 		return fmt.Errorf("failed to remove chunk %s: %w", hash, err)
 	}
-
-	mgr.chunkRegistry.UnregisterChunk(hash)
 	
 	return nil
 }
