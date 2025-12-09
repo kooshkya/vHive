@@ -136,60 +136,46 @@ func (cr *ChunkRegistry) GetHitStats() map[string]ChunkStats {
 // AddAccess assumes:
 //   - caller holds the per-chunk lock
 func (cr *ChunkRegistry) AddAccess(hash string) error {
-	log.Debugf("AddAccess: waiting for registryLock for %s", hash)
-	cr.registryLock.Lock()
-	log.Debugf("AddAccess: acquired registryLock for %s", hash)
-
-	defer func() {
-		log.Debugf("AddAccess: releasing registryLock for %s", hash)
-		cr.registryLock.Unlock()
-	}()
-
+	cr.registryLock.Lock()	// have to lock because we write to list.Lists (not concurrency-safe.) also need for correctLength.
+	defer cr.registryLock.Unlock()
 	logger := log.WithField("baseFolder", cr.snpMgr.baseFolder)
-	now := time.Now()
 
+    now := time.Now()
 	entryIface, ok := cr.items.Load(hash)
-
 	if !ok {
-		log.Debugf("AddAccess: no entry found for %s, creating new", hash)
-
 		entry := &ChunkEntry{
-			hash:           hash,
-			accessTimes:    []time.Time{now},
-			element:        nil,
+			hash: hash,
+			accessTimes: []time.Time{now},
+
+			element: nil,
 			containingList: cr.coldList,
 		}
 		cr.items.Store(hash, entry)
 		entry.element = cr.coldList.PushFront(entry)
-		log.Debugf("AddAccess: starting call to correcLength for %s", hash)
 		_, err := cr.correctLength(hash)
-		log.Debugf("AddAccess: Ended call to correcLength for %s", hash)
 		if err != nil {
 			logger.Errorf("Error with correctLength: %v", err)
 		}
-
-		log.Debugf("AddAccess: finished new-entry path for %s", hash)
 		return err
-	}
+	} else {
+		entry := entryIface.(*ChunkEntry)
+		entry.accessTimes = append(entry.accessTimes, now)
 
-	entry := entryIface.(*ChunkEntry)
-	entry.accessTimes = append(entry.accessTimes, now)
-
-	if entry.containingList == cr.coldList {
-		if len(entry.accessTimes) == cr.K {
-			cr.coldList.Remove(entry.element)
-			entry.element = cr.hotList.PushFront(entry)
-			entry.containingList = cr.hotList
-		} else if len(entry.accessTimes) < cr.K {
-			cr.coldList.MoveToFront(entry.element)
-		} else {
-			return errors.New(fmt.Sprintf("chunk %s is on cold list but has K or more accesses!", hash))
-		}
+		if entry.containingList == cr.coldList {
+			if len(entry.accessTimes) == cr.K {
+				cr.coldList.Remove(entry.element)
+				entry.element = cr.hotList.PushFront(entry)
+				entry.containingList = cr.hotList
+			} else if len(entry.accessTimes) < cr.K {
+				cr.coldList.MoveToFront(entry.element)
+			} else {
+				return errors.New(fmt.Sprintf("chunk %s is on cold list but has K or more accesses!", hash))
+			}
+		} 
 	}
 
 	return nil
 }
-
 
 // deletes extra chunks. returns number of chunks deleted. assumes registryLock and also chunk lock for latestChunkHash is held by caller
 func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
@@ -219,9 +205,7 @@ func (cr *ChunkRegistry) correctLength(latestChunkHash string) (int, error) {
 		}
 
 		if to_remove != latestChunkHash {
-			log.Debugf("correctLength: starting call to RemoveChunk for %s while latestChunk is %s", to_remove, latestChunkHash)
 			cr.snpMgr.RemoveChunk(to_remove)
-			log.Debugf("correctLength: ended call to RemoveChunk for %s while latestChunk is %s", to_remove, latestChunkHash)
 			count += 1
 		} else {
 			return count, errors.New(fmt.Sprintf("correctLength: Would have deadlocked on removal of %s", to_remove))
@@ -971,13 +955,14 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 
 // removes the chunk from local disk
 func (mgr *SnapshotManager) RemoveChunk(hash string) error {
+	// TODO: finish logic
 	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 	lock := lockI.(*sync.Mutex)
 
-	start := time.Now()
-	log.Debugf("RemoveChunk: Trying to acquire lock for chunk %s", hash)
+	// start := time.Now()
+	// log.Debugf("RemoveChunk: Trying to acquire lock for chunk %s", hash)
 	lock.Lock()
-	log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	// log.Debugf("RemoveChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
 	
 	defer lock.Unlock()
 
@@ -996,9 +981,7 @@ func (mgr *SnapshotManager) RemoveChunk(hash string) error {
 		return fmt.Errorf("failed to remove chunk %s: %w", hash, err)
 	}
 
-	log.Debugf("RemoveChunk: starting unregisterchunk for chunk %s", hash)
 	mgr.chunkRegistry.UnregisterChunk(hash)
-	log.Debugf("RemoveChunk: ending unregisterchunk for chunk %s", hash)
 	
 	return nil
 }
