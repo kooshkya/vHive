@@ -949,23 +949,30 @@ func (mgr *SnapshotManager) DownloadChunk(hash string) error {
 	lockI, _ := mgr.chunkRegistry.chunkLocks.LoadOrStore(hash, &sync.Mutex{})
 	lock := lockI.(*sync.Mutex)
 
-	// start := time.Now()
+	start := time.Now()
 	lock.Lock()
-	// log.Debugf("DownloadChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
+	log.Debugf("AcquireDownloadChunk: Acquired lock for chunk %s in %v", hash, time.Since(start))
 	
 	defer lock.Unlock()
 
+	log.Debugf("DoesChunkExistDownloadChunk: check short circuit for %s", hash)
 	if mgr.chunkRegistry.ChunkExists(hash){
+		log.Debugf("ChunkExistsDownloadChunk: short circuit for %s", hash)
 		mgr.chunkRegistry.AddAccess(hash)
+		log.Debugf("ChunkExistsDownloadChunk: added access for %s", hash)
 		return nil // already downloaded
 	}
+	log.Debugf("DownloadChunk: No short circuit for %s", hash)
+
 	chunkFilePath := mgr.GetChunkFilePath(hash)
 
 	if err := mgr.downloadFile(chunkPrefix, chunkFilePath, hash); err != nil {
 		return err
 	}
 
+	log.Debugf("ChunkDoesntExistDownlodChunk: try to add access for %s", hash)
 	mgr.chunkRegistry.AddAccess(hash)
+	log.Debugf("ChunkDoesntExistDownlodChunk: added access for %s", hash)
 	return nil
 }
 
@@ -1115,7 +1122,9 @@ func (mgr *SnapshotManager) downloadWorkingSet(snap *Snapshot) error {
 		go func() {
 			defer wg.Done()
 			for hash := range jobs {
+				log.Debugf("StartDownloadChunk %s", hash)
 				err := mgr.DownloadChunk(hash)
+				log.Debugf("EndDownloadChunk %s", hash)
 				if err != nil {
 					log.Printf("Error downloading chunk %s: %v", hash, err)
 					continue
