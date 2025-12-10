@@ -47,9 +47,9 @@ import (
 
 const (
 	chunkPrefix = "_chunks"
-	K = 10 		// TODO: tune
+	K = 3 		// TODO: tune
 	capacity = 15000	// TODO: tune
-	deleteBatchSize = 1	// TODO: tune
+	deleteBatchSize = 150	// TODO: tune
 )
 
 func (mgr *SnapshotManager) GetChunkSize() uint64 {
