@@ -103,9 +103,9 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 // should only be called while holding the chunk's lock, otherwise might return true while chunk is being deleted
 func (cr *ChunkRegistry) ChunkExists(hash string) bool {
 	_, ok := cr.items.Load(hash)
-	
+
 	cr.historyLock.Lock()
-    cr.accessHistory = append(cr.accessHistory, hash)
+    cr.accessHistory = append(cr.accessHistory, fmt.Sprintf("%v + %s", time.Now(), hash))
     cr.historyLock.Unlock()
 
 	actualIface, _ := cr.stats.LoadOrStore(hash, &ChunkStats{})
@@ -211,6 +211,10 @@ func (cr *ChunkRegistry) correctLength() {
 				log.Errorf("error while getting the victim chunk")
 				break
 			}
+
+			cr.historyLock.Lock()
+			cr.accessHistory = append(cr.accessHistory, fmt.Sprintf("%v - %s", time.Now(), to_remove))
+			cr.historyLock.Unlock()
 
 			lockI, _ := cr.chunkLocks.LoadOrStore(to_remove, &sync.Mutex{})
 			lock := lockI.(*sync.Mutex)
