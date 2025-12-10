@@ -71,6 +71,7 @@ type ChunkRegistry struct {
 	deletionLock	sync.RWMutex	// freezes the cache when evictor runs
 	statsLock		sync.Mutex	// protect hotList and coldList and other "stats": only one goroutine can AddAccess at the same time
 	chunkLocks       sync.Map	// protects individual chunks. only one thread can access or change chunk files at the same time
+	deleteLoopScheduled bool
 
 	snpMgr	*SnapshotManager
 	K        int
@@ -94,6 +95,7 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 		hotList:  list.New(),
 		coldList: list.New(),
 		deleteBatchSize: deleteBatchSize,
+		deleteLoopScheduled: false,
 	}
 	return cr
 }
@@ -160,7 +162,10 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		entry.element = cr.coldList.PushFront(entry)
 
 		if cr.GetLength() > cr.capacity + cr.deleteBatchSize {
-			go cr.correctLength()
+			if !cr.deleteLoopScheduled {
+				cr.deleteLoopScheduled = true
+				go cr.correctLength()
+			}
 		}
 
 		return nil
@@ -192,6 +197,8 @@ func (cr *ChunkRegistry) correctLength() {
 	defer cr.deletionLock.Unlock()
 	cr.statsLock.Lock()
 	defer cr.statsLock.Unlock()
+	
+	lockDuration := time.Since(start)
 
 	firstLength := cr.GetLength()
 	if firstLength > cr.capacity + cr.deleteBatchSize {
@@ -223,10 +230,11 @@ func (cr *ChunkRegistry) correctLength() {
 
 			lock.Unlock()
 		}
-		log.Debugf("deletionLoop ran (firstLength was %d). deleted %d chunks and took %v", firstLength, count, time.Since(start))
+		log.Debugf("deletionLoop ran (firstLength was %d). deleted %d chunks and took %v. Waited %v for locks", firstLength, count, time.Since(start), lockDuration)
 	} else {
-		log.Debugf("deletionLoop short-circuited. returning in %v", time.Since(start))
+		log.Debugf("deletionLoop short-circuited (firstLength was %d). Waited %v for locks. returning in %v", firstLength, lockDuration, time.Since(start))
 	}
+	cr.deleteLoopScheduled = false
 }
 
 // assumes deletionLock and statsLock are held
