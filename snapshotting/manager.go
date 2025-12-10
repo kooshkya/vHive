@@ -36,7 +36,7 @@ import (
 	"sync/atomic"
 	"encoding/csv"
 	"strconv"
-	"math/rand"
+	// "math/rand"
 
 	"github.com/pkg/errors"
 
@@ -49,7 +49,7 @@ const (
 	chunkPrefix = "_chunks"
 	K = 10 		// TODO: tune
 	capacity = 15000	// TODO: tune
-	deleteBatchSize = 150	// TODO: tune
+	deleteBatchSize = 1	// TODO: tune
 )
 
 func (mgr *SnapshotManager) GetChunkSize() uint64 {
@@ -246,41 +246,41 @@ func (cr *ChunkRegistry) correctLength() {
 
 // assumes deletionLock and statsLock are held
 func (cr *ChunkRegistry) getVictimChunk() (string, error) {
-	total := cr.GetLength()
-	selected := rand.Intn(total)
-	head := cr.coldList.Front()
-	for selected > 0 {
-		head = head.Next()
-		if head == nil {
-			head = cr.hotList.Front()
-		}
-		selected -= 1
-	}
-	return head.Value.(*ChunkEntry).hash, nil
-	
-	// var hotLRU, coldLRU *ChunkEntry = nil, nil
-			
-	// if cr.hotList.Len() > 0 {
-	// 	hotLRU = cr.getHotLRU().Value.(*ChunkEntry)
-	// }
-	// if cr.coldList.Len() > 0 {
-	// 	coldLRU = cr.coldList.Back().Value.(*ChunkEntry)
-	// }
-
-	// to_remove := ""
-	// if hotLRU == nil {
-	// 	to_remove = coldLRU.hash
-	// } else if coldLRU == nil {
-	// 	to_remove = hotLRU.hash
-	// } else {
-	// 	if int(time.Since(hotLRU.accessTimes[len(hotLRU.accessTimes) - 1]).Milliseconds()) / cr.K < int(time.Since(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1]).Milliseconds()) / len(coldLRU.accessTimes) {
-	// 		to_remove = coldLRU.hash
-	// 	} else {
-	// 		to_remove = hotLRU.hash
+	// total := cr.GetLength()
+	// selected := rand.Intn(total)
+	// head := cr.coldList.Front()
+	// for selected > 0 {
+	// 	head = head.Next()
+	// 	if head == nil {
+	// 		head = cr.hotList.Front()
 	// 	}
+	// 	selected -= 1
 	// }
+	// return head.Value.(*ChunkEntry).hash, nil
+	
+	var hotLRU, coldLRU *ChunkEntry = nil, nil
+			
+	if cr.hotList.Len() > 0 {
+		hotLRU = cr.getHotLRU().Value.(*ChunkEntry)
+	}
+	if cr.coldList.Len() > 0 {
+		coldLRU = cr.coldList.Back().Value.(*ChunkEntry)
+	}
 
-	// return to_remove, nil
+	to_remove := ""
+	if hotLRU == nil {
+		to_remove = coldLRU.hash
+	} else if coldLRU == nil {
+		to_remove = hotLRU.hash
+	} else {
+		if int(time.Since(hotLRU.accessTimes[len(hotLRU.accessTimes) - 1]).Milliseconds()) / cr.K < int(time.Since(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1]).Milliseconds()) / len(coldLRU.accessTimes) {
+			to_remove = coldLRU.hash
+		} else {
+			to_remove = hotLRU.hash
+		}
+	}
+
+	return to_remove, nil
 }
 
 func (cr *ChunkRegistry) getHotLRU() *list.Element {
