@@ -36,7 +36,6 @@ import (
 	"sync/atomic"
 	"encoding/csv"
 	"strconv"
-	"math/rand"
 
 	"github.com/pkg/errors"
 
