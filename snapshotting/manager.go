@@ -630,7 +630,7 @@ func (mgr *SnapshotManager) UploadWSFile(revision string) error {
 
 func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 	startTime := time.Now()
-
+	log.Debugf("starting uploadMemFile for snapshot %s at %v", snap.id, startTime)
 	if !mgr.chunking {
 		error := mgr.uploadFile(snap.GetId(), snap.GetMemFilePath())
 		log.Infof("unchunked uploadMemFile for snapshot %s completed in %s", snap.GetId(), time.Since(startTime))
@@ -763,22 +763,37 @@ func (mgr *SnapshotManager) uploadMemFile(snap *Snapshot) error {
 		return firstErr
 	}
 
-	// Upload recipe file
+	log.Infof("All chunks uploaded, preparing recipe file")
 	recipeFilePath := snap.GetRecipeFilePath()
+	log.Infof("Recipe file path: %s", recipeFilePath)
+
 	recipeFile, err := os.Create(recipeFilePath)
 	if err != nil {
+		log.Errorf("Failed to create recipe file: %v", err)
 		return errors.Wrapf(err, "creating recipe file for chunked upload")
 	}
-	defer recipeFile.Close()
+	defer func() {
+		recipeFile.Close()
+		log.Infof("Closed recipe file handle")
+	}()
 
+	log.Infof("Writing recipe file (%d bytes)", len(recipe))
 	if _, err := recipeFile.Write(recipe); err != nil {
+		log.Errorf("Failed to write recipe file: %v", err)
 		return errors.Wrapf(err, "writing recipe file for chunked upload")
 	}
+	log.Infof("Recipe file written successfully")
 
-	mgr.uploadFile(snap.GetId(), recipeFilePath)
+	log.Infof("Uploading recipe file for snapshot %s", snap.GetId())
+	if err := mgr.uploadFile(snap.GetId(), recipeFilePath); err != nil {
+		log.Errorf("Failed to upload recipe file: %v", err)
+		return err
+	}
+	log.Infof("Recipe file uploaded successfully, removing local file")
 	os.Remove(recipeFilePath)
+	log.Infof("Local recipe file removed")
 
-	log.Infof("uploadMemFile for snapshot %s completed in %s, chunk count: %d", snap.GetId(), time.Since(startTime), chunkIndex+1)
+	log.Infof("uploadMemFile for snapshot %s completed in %s, total chunks: %d", snap.GetId(), time.Since(startTime), chunkIndex)
 	return nil
 }
 
