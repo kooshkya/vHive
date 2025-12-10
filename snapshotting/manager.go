@@ -46,8 +46,8 @@ import (
 
 const (
 	chunkPrefix = "_chunks"
-	K = 8 		// TODO: tune
-	capacity = 1000	// TODO: tune
+	K = 10 		// TODO: tune
+	capacity = 32000	// TODO: tune
 	deleteBatchSize = 10	// TODO: tune
 )
 
