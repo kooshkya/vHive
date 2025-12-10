@@ -103,6 +103,18 @@ func NewChunkRegistry(snpMgr *SnapshotManager, K, capacity int) *ChunkRegistry {
 // should only be called while holding the chunk's lock, otherwise might return true while chunk is being deleted
 func (cr *ChunkRegistry) ChunkExists(hash string) bool {
 	_, ok := cr.items.Load(hash)
+	
+	cr.historyLock.Lock()
+    cr.accessHistory = append(cr.accessHistory, hash)
+    cr.historyLock.Unlock()
+
+	actualIface, _ := cr.stats.LoadOrStore(hash, &ChunkStats{})
+    stats := actualIface.(*ChunkStats)
+	atomic.AddInt64(&stats.Calls, 1)
+	if ok {
+		atomic.AddInt64(&stats.Hits, 1)
+	}
+
 	return ok
 }
 
@@ -140,16 +152,7 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 
     now := time.Now()
 
-	cr.historyLock.Lock()
-    cr.accessHistory = append(cr.accessHistory, hash)
-    cr.historyLock.Unlock()
-
 	entryIface, ok := cr.items.Load(hash)
-
-	actualIface, _ := cr.stats.LoadOrStore(hash, &ChunkStats{})
-    stats := actualIface.(*ChunkStats)
-	atomic.AddInt64(&stats.Calls, 1)
-
 	if !ok {	// means the chunk is new
 		entry := &ChunkEntry{
 			hash: hash,
@@ -171,7 +174,6 @@ func (cr *ChunkRegistry) AddAccess(hash string) error {
 		return nil
 	}
 
-	atomic.AddInt64(&stats.Hits, 1)
 	entry := entryIface.(*ChunkEntry)
 	entry.accessTimes = append(entry.accessTimes, now)
 
