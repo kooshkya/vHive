@@ -173,7 +173,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			orch.PauseVM(ctx, vmId)
 			orch.CreateSnapshot(ctx, vmId, snap)
 			snapMgr.CommitSnapshot(rev)
-			snapMgr.UploadSnapshot(rev)
+			if err := snapMgr.UploadSnapshot(rev); err != nil {
+				log.Errorf("upload error: %v", err)
+			}
 			// snapMgr.DeleteSnapshot(rev)
 			// snapMgr.CleanChunks()
 			log.Debugf("finished snapshotting %s", vmId)
