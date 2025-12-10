@@ -260,7 +260,7 @@ func (cr *ChunkRegistry) getVictimChunk() (string, error) {
 	} else if coldLRU == nil {
 		to_remove = hotLRU.hash
 	} else {
-		if hotLRU.accessTimes[len(hotLRU.accessTimes) - K].After(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1] ) {
+		if int(time.Since(hotLRU.accessTimes[len(hotLRU.accessTimes) - 1]).Milliseconds()) / cr.K < int(time.Since(coldLRU.accessTimes[len(coldLRU.accessTimes) - 1]).Milliseconds()) / len(coldLRU.accessTimes) {
 			to_remove = coldLRU.hash
 		} else {
 			to_remove = hotLRU.hash
